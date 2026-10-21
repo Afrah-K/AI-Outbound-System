@@ -58,3 +58,4 @@ backend/data/*.csv
 
 # Vercel
 .vercel/
+.neon
