@@ -3,9 +3,9 @@ The background worker: the campaign sender, warmup, the reply agent, inbox
 placement checks, and queued jobs (scrapes, enrichment, verification,
 personalization).
 
-Locally all of this runs inside the API process (see main.py's lifespan).
-In production on Vercel the API is serverless, so this runs as its own
-always-on process - a Vercel Daemon (see vercel.json and Dockerfile.worker):
+Normally all of this runs inside the API process (see main.py's lifespan) -
+locally and on Render. It can also run as its own process, e.g. next to a
+serverless API, with BACKGROUND_WORKER=external on the API:
 
     python -m app.worker
 

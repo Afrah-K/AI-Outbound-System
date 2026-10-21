@@ -6,9 +6,8 @@ The API queues a job (`enqueue_job`) and returns at once; a worker claims it
 and runs the handler registered for its kind (`@job_handler("...")`) inside
 the owner's workspace, saving progress as it goes. Because the job lives in
 the database, any API instance can report on it - so this works both as one
-local process (the worker runs in-process, see main.py) and on Vercel, where
-the API is serverless and the worker is a separate always-on daemon
-(app/worker.py).
+local process (the worker runs in-process, see main.py), on a single server
+like Render, and with a serverless API plus a separate worker (app/worker.py).
 """
 from __future__ import annotations
 

@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Where the schedulers and background jobs run: "in_process" (inside the API -
-    # local/single server), "external" (a separate `python -m app.worker`, e.g. the
-    # Vercel Daemon), or "auto" = external on Vercel, in_process anywhere else
+    # local and Render), "external" (a separate `python -m app.worker` process), or
+    # "auto" = external on serverless Vercel, in_process anywhere else
     background_worker: str = "auto"
     # How often the worker looks for newly queued jobs (scrapes, enrichment...).
     # Higher = less CPU on a free plan, at the cost of jobs starting a little later

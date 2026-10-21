@@ -258,12 +258,26 @@ async def _scrape_awwwards(payload: AwwwardsScrapeRequest, filters: AwwwardsFilt
 
 
 # Background jobs: the API validates and queues; the worker (in-process locally,
-# a Vercel Daemon in production) runs these handlers - see app/services/jobs.py
+# or a separate `python -m app.worker`) runs these handlers - see app/services/jobs.py
 
 @job_handler("clutch")
 async def _clutch_job(job: JobRun, data: dict) -> dict:
     payload = ClutchScrapeRequest(**data)
-    return await _scrape_clutch(payload, _to_filters(payload.filters), on_progress=job.progress)
+    try:
+        return await _scrape_clutch(payload, _to_filters(payload.filters), on_progress=job.progress)
+    except Exception as exc:
+        # Hosted servers (e.g. Render's free plan) have no Chrome or screen for the
+        # visible browser Clutch needs - say so instead of a raw Playwright error
+        text = str(exc)
+        if "Executable doesn't exist" in text or "playwright install" in text or "Missing X server" in text or "DISPLAY" in text:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Live Clutch scraping isn't available on this server - it needs a real Chrome "
+                    "window. Use \"Upload saved page(s)\" on the Clutch tab instead, or run the app locally."
+                ),
+            )
+        raise
 
 
 @job_handler("awwwards")

@@ -2,7 +2,7 @@
 
 A self-hosted cold email platform that runs on your own machine. It finds and enriches leads, sends personalised email sequences from your own Gmail accounts, and collects every reply in one place. An AI agent drafts the responses, and nothing goes out without your approval.
 
-It runs locally (a FastAPI backend with a SQLite database, and a React frontend) or deployed on Vercel with Postgres - see [DEPLOY.md](DEPLOY.md). Each account signs in with Google or email + password and gets its own separate workspace. Email is sent and read through the Gmail API with your own Google OAuth app.
+It runs locally (a FastAPI backend with a SQLite database, and a React frontend) or deployed for free with the backend on Render, the frontend on Vercel and Postgres on Neon - see [DEPLOY.md](DEPLOY.md). Each account signs in with Google or email + password and gets its own separate workspace. Email is sent and read through the Gmail API with your own Google OAuth app.
 
 ## What it does
 
@@ -52,7 +52,7 @@ Full instructions, including how to create the Google OAuth app: [docs/setup.md]
 - [How it works](docs/how-it-works.md): the sending engine, reply detection, the reply agent, warmup, and the data model.
 - [API reference](docs/api.md): every backend endpoint.
 - [Troubleshooting](docs/troubleshooting.md): "my campaign isn't sending", a blank page, OAuth errors, and more.
-- [Deploying to Vercel](DEPLOY.md): frontend, API, background worker and Postgres in one Vercel project.
+- [Deploying](DEPLOY.md): backend on Render, frontend on Vercel, Postgres on Neon (all free plans).
 
 Interactive API docs are also served by the backend at http://localhost:8000/docs.
 
@@ -62,7 +62,7 @@ Interactive API docs are also served by the backend at http://localhost:8000/doc
 backend/
   app/
     main.py              FastAPI app; runs the background worker in-process when local
-    worker.py            The background worker on its own (the Vercel Daemon)
+    worker.py            The schedulers and job worker (started by main.py, or on their own)
     tenancy.py           Per-account data isolation for every query
     services/jobs.py     Database-backed background jobs (scrapes, enrichment, ...)
     config.py            Settings, read from backend/.env

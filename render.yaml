@@ -1,0 +1,47 @@
+# Render Blueprint for the backend (see DEPLOY.md).
+# One web service runs the API, the schedulers (campaign sending, warmup, reply
+# agent, placement checks) and the background job worker in one process -
+# the same way it runs locally. The frontend is deployed separately on Vercel
+# and forwards /api to this service.
+services:
+  - type: web
+    name: ai-outbound-api        # gives https://ai-outbound-api.onrender.com (vercel.json forwards /api here)
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: BACKGROUND_WORKER
+        value: in_process
+      - key: JOB_POLL_SECONDS
+        value: "5"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      # Set these in the Render dashboard when the Blueprint asks (see DEPLOY.md)
+      - key: DATABASE_URL          # Neon pooled connection string
+        sync: false
+      - key: APP_BASE_URL          # https://<your-vercel-domain>
+        sync: false
+      - key: CORS_ORIGINS          # https://<your-vercel-domain>
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI   # https://<your-vercel-domain>/api/v1/inboxes/oauth/callback
+        sync: false
+      - key: GOOGLE_LOGIN_REDIRECT_URI  # https://<your-vercel-domain>/api/v1/auth/google/callback
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
