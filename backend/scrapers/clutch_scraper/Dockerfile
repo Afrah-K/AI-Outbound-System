@@ -7,14 +7,10 @@
 # Run (mount a host folder so the output CSV survives the container):
 #   docker run -it -v "$(pwd)/data/imports:/data" clutch-scraper
 #
-# Runs headed (visible-window) Chromium under Xvfb's virtual display, since
-# Clutch's Cloudflare check blocks headless Chromium specifically - see
-# scrapers/clutch.py's module docstring for why.
+# Runs the full Chromium build headless (no display needed) - see
+# scrapers/clutch.py's module docstring for why it's not the headless shell.
 
 FROM mcr.microsoft.com/playwright/python:v1.60.0-jammy
-
-RUN apt-get update && apt-get install -y --no-install-recommends xvfb \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -26,4 +22,4 @@ COPY scrapers/clutch_scraper/entrypoint.py ./entrypoint.py
 
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["xvfb-run", "-a", "python", "entrypoint.py"]
+ENTRYPOINT ["python", "entrypoint.py"]

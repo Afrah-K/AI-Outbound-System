@@ -3,8 +3,7 @@ Interactive entrypoint for the containerized Clutch scraper.
 
 Asks for a Clutch category (domain/slug or full URL) and how many pages to
 pull, then runs it through the same Playwright-based live scraper used by
-the app (scrapers/clutch.py - a real, visible-window Chromium browser, run
-here under Xvfb's virtual display since the container has no real one),
+the app (scrapers/clutch.py - a real Chromium browser, run headless),
 saving results to a CSV.
 
 USAGE (from backend/):

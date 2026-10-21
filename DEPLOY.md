@@ -16,7 +16,7 @@ Locally nothing changes: `uvicorn app.main:app --reload` and `npm run dev`, on S
 - **The first request after a sleep is slow.** If a page shows an error right after a long break, wait a minute and refresh.
 - **Neon free:** 1 GB of data and 100 compute-hours a month. Because the backend sleeps when unused, the database does too (after 5 idle minutes), so normal use fits.
 - **Vercel Hobby is for personal, non-commercial use** (Vercel's fair-use rules). Fine for trying it out; for business outreach Vercel expects Pro.
-- **Clutch live scraping isn't available on Render** (it needs a real Chrome window). Awwwards and Google Maps work; for Clutch use "Upload saved page(s)", or run the app locally.
+- **Clutch live scraping isn't available on Render** (Render's Python runtime has no Chromium, which Clutch's bot-check needs). Awwwards and Google Maps work; for Clutch use "Upload saved page(s)", or run the app locally.
 
 ## 1. Database - Neon
 

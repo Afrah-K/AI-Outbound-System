@@ -439,7 +439,7 @@ export default function ClutchPanel({ scraper, onResults, onBusyChange }) {
       {scraping && (
         <ScrapeProgress
           title={`Scraping leads from ${task?.label?.replace('Clutch: ', '') || 'Clutch'}...`}
-          detail="A browser window will appear briefly for each page"
+          detail="Runs in the background - about 10-15 seconds per page"
           message={task?.message}
           done={task?.processed}
           total={task?.total}

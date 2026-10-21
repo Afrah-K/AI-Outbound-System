@@ -138,13 +138,12 @@ async def list_scrapers(db: Session = Depends(get_db)):
                 "max_urls": MAX_URLS,
                 "max_results": MAX_RESULTS,
                 # Clutch fronts its pages with a Cloudflare JS challenge that blocks
-                # plain HTTP requests. A real (visible) browser passes it, so live
-                # fetch works, but it launches an actual Chrome window while it runs.
+                # plain HTTP requests. A real (headless, full-build) Chromium passes
+                # it, so live fetch works without any window appearing.
                 "live_fetch_blocked": False,
                 "live_fetch_note": (
-                    "Uses a real, visible Chromium window to pass Clutch's bot-check - "
-                    "expect a browser window to briefly appear for each page fetched "
-                    "(~10-15s per page). Location, sort, rate, budget and industry are "
+                    "Uses a real Chromium browser in the background (no window) to pass "
+                    "Clutch's bot-check, ~10-15s per page. Location, sort, rate, budget and industry are "
                     "applied by Clutch itself, so a targeted run needs fewer pages."
                 ),
                 "upload_supported": True,
@@ -266,15 +265,15 @@ async def _clutch_job(job: JobRun, data: dict) -> dict:
     try:
         return await _scrape_clutch(payload, _to_filters(payload.filters), on_progress=job.progress)
     except Exception as exc:
-        # Hosted servers (e.g. Render's free plan) have no Chrome or screen for the
-        # visible browser Clutch needs - say so instead of a raw Playwright error
+        # Hosted servers (e.g. Render's free plan) may have no Chrome installed for
+        # the browser Clutch needs - say so instead of a raw Playwright error
         text = str(exc)
         if "Executable doesn't exist" in text or "playwright install" in text or "Missing X server" in text or "DISPLAY" in text:
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Live Clutch scraping isn't available on this server - it needs a real Chrome "
-                    "window. Use \"Upload saved page(s)\" on the Clutch tab instead, or run the app locally."
+                    "Live Clutch scraping isn't available on this server - it needs Chromium "
+                    "installed (playwright install chromium). Use \"Upload saved page(s)\" on the Clutch tab instead, or run the app locally."
                 ),
             )
         raise

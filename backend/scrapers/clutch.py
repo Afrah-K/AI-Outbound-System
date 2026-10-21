@@ -27,13 +27,14 @@ NOTES:
 - Clutch fronts these pages with a Cloudflare JS challenge ("Just a
   moment..."). A plain `requests` call gets a 403 and no real HTML - that's
   not a selector problem, there's nothing to select. A real browser passes
-  it, but only in headed (visible-window) mode: Cloudflare's check
-  specifically fingerprints Chromium's headless code path and blocks it,
-  even though headless is otherwise a normal, unmodified browser. So this
-  scraper launches real, visible Chromium windows via Playwright - nothing
-  is spoofed or faked, it's an actual browser rendering the actual page,
-  the same as opening it yourself. Expect a Chrome window to briefly appear
-  while this runs.
+  it. Playwright's default headless browser (the stripped-down
+  "chromium-headless-shell") gets blocked, but the full Chromium build run
+  in its "new" headless mode passes - confirmed by testing both back to
+  back (Oct 2026). So this scraper runs full Chromium with no window
+  (channel="chromium", headless=True) - nothing is spoofed or faked, it's
+  an actual browser rendering the actual page. If that ever starts getting
+  blocked, --show-browser (or CLUTCH_SHOW_BROWSER=1) falls back to a
+  visible window, which Cloudflare has always let through.
 - Every request uses a fresh browser context (new cookie jar/session), not
   a shared one. Confirmed by testing: reusing one context across requests
   got every request after the first blocked with a fresh Cloudflare
@@ -65,6 +66,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import os
 import random
 import re
 from dataclasses import dataclass, field
@@ -213,6 +215,9 @@ CSV_FIELDS = [
 MAX_PAGES = 5           # pages per category to pull
 DELAY_RANGE = (3, 6)   # seconds between page visits, kept out of politeness, not evasion
 PAGE_LOAD_WAIT_MS = 8000  # time to let Cloudflare's challenge clear before reading the page
+# Show the browser window instead of running headless - only needed if
+# Cloudflare starts blocking headless Chromium (see NOTES).
+SHOW_BROWSER = os.environ.get("CLUTCH_SHOW_BROWSER", "").lower() in ("1", "true", "yes")
 OUTPUT_FILE = Path(__file__).resolve().parent.parent / "data" / "imports" / "clutch_leads.csv"
 
 USER_AGENT = (
@@ -584,10 +589,12 @@ async def scrape_live(
     pages_per_url: int = 1,
     filters: Optional[ClutchFilters] = None,
     on_progress: Optional[Callable[..., None]] = None,
+    show_browser: Optional[bool] = None,
 ) -> dict:
     """
     Fetch and parse Clutch listings from one or more category URLs using a
-    real, visible Chromium browser - a fresh browser context per request
+    real Chromium browser (headless unless show_browser) - a fresh browser
+    context per request
     (see _fetch_rendered_html). Filters are applied via Clutch's URL params
     where possible and locally otherwise; companies that show up in more
     than one category are merged.
@@ -611,7 +618,10 @@ async def scrape_live(
     stats: list[dict] = []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        headed = SHOW_BROWSER if show_browser is None else show_browser
+        # channel="chromium" = the full browser in new headless mode, not the
+        # headless shell that Cloudflare blocks (see NOTES)
+        browser = await p.chromium.launch(headless=not headed, channel="chromium")
         try:
             for url_index, url in enumerate(urls):
                 category = _category_label(url)
@@ -725,6 +735,10 @@ def main():
         "--html-dir", metavar="PATH",
         help="Parse every .html file in this directory instead of fetching live",
     )
+    parser.add_argument(
+        "--show-browser", action="store_true",
+        help="Show the Chromium window instead of running headless (if Cloudflare blocks headless)",
+    )
     parser.add_argument("--output", default=str(OUTPUT_FILE), help="CSV output path")
     args = parser.parse_args()
 
@@ -745,7 +759,7 @@ def main():
         all_rows = parse_files([p.read_text(encoding="utf-8", errors="replace") for p in html_paths], filters)
     else:
         urls = args.url or [_resolve_category(c) for c in (args.category or [])] or DESIGN_CATEGORY_URLS
-        all_rows = asyncio.run(scrape_live(urls, args.pages, filters))["rows"]
+        all_rows = asyncio.run(scrape_live(urls, args.pages, filters, show_browser=args.show_browser or None))["rows"]
 
     if not all_rows:
         print("No data scraped. Check access to Clutch, the filters, and the page selectors.")
