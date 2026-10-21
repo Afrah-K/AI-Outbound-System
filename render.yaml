@@ -8,6 +8,7 @@ services:
     name: ai-outbound-api        # gives https://ai-outbound-api.onrender.com (vercel.json forwards /api here)
     runtime: python
     plan: free
+    region: ohio                 # same AWS region as the Neon database (us-east-2)
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
