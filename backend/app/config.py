@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # local/single server), "external" (a separate `python -m app.worker`, e.g. the
     # Vercel Daemon), or "auto" = external on Vercel, in_process anywhere else
     background_worker: str = "auto"
+    # How often the worker looks for newly queued jobs (scrapes, enrichment...).
+    # Higher = less CPU on a free plan, at the cost of jobs starting a little later
+    job_poll_seconds: float = 1.0
 
     @property
     def worker_mode(self) -> str:

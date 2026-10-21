@@ -21,10 +21,11 @@ from typing import Any, Awaitable, Callable, Optional
 import structlog
 from sqlalchemy.orm import Session
 
+from app.config import settings
+
 logger = structlog.get_logger()
 
 MAX_CONCURRENT_JOBS = 3
-POLL_SECONDS = 1.0
 SAVE_PROGRESS_EVERY = 1.0                  # seconds between progress writes
 HEARTBEAT_EVERY = 20                       # seconds
 STALE_AFTER = timedelta(minutes=3)         # running, but no heartbeat for this long -> its worker died
@@ -265,7 +266,8 @@ async def job_worker_loop(stop: Optional[asyncio.Event] = None) -> None:
 
         _wakeup.clear()
         try:
-            await asyncio.wait_for(_wakeup.wait(), timeout=POLL_SECONDS)
+            # A job queued by this same process wakes the loop at once; otherwise poll
+            await asyncio.wait_for(_wakeup.wait(), timeout=settings.job_poll_seconds)
         except asyncio.TimeoutError:
             pass
 
