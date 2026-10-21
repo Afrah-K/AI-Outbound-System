@@ -10,6 +10,7 @@ import {
 } from '@heroicons/react/24/outline'
 import Button from '../common/Button'
 import Card from '../common/Card'
+import ExportDialog from '../common/ExportDialog'
 
 const RESULTS_PAGE_SIZE = 40
 
@@ -50,8 +51,13 @@ export function WebsiteLink({ url }) {
  * columns: [{ key, label, sortValue?(row), render?(row), className? }]
  * A column is sortable when it has a sortValue.
  */
-export default function ScrapeResults({ results, columns, csvFields, filename, searchKeys, onSendToEnricher }) {
+/**
+ * listName: what this run is called (e.g. "Clutch - UI/UX Design - Oct 21") - the
+ * suggested export name, and passed on to the Enricher so the list keeps it.
+ */
+export default function ScrapeResults({ results, columns, csvFields, listName, searchKeys, onSendToEnricher }) {
   const [resultsPage, setResultsPage] = useState(1)
+  const [exportOpen, setExportOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState({ key: null, dir: 'desc' })
   const [checkedRows, setCheckedRows] = useState(new Set())
@@ -161,13 +167,20 @@ export default function ScrapeResults({ results, columns, csvFields, filename, s
               placeholder="Search results..."
               className="w-64 rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
             />
-            <Button variant="secondary" size="sm" icon={ArrowDownTrayIcon} onClick={() => downloadCSV(exportRows, csvFields, filename)}>
+            <Button variant="secondary" size="sm" icon={ArrowDownTrayIcon} onClick={() => setExportOpen(true)}>
               Export {checkedList.length > 0 ? `${checkedList.length} selected` : search ? `${visibleRows.length} shown` : 'CSV'}
             </Button>
+            <ExportDialog
+              open={exportOpen}
+              defaultName={checkedList.length > 0 ? `${listName} (selected)` : listName}
+              count={exportRows.length}
+              onExport={(fileName) => downloadCSV(exportRows, csvFields, fileName)}
+              onClose={() => setExportOpen(false)}
+            />
             <Button
               size="sm"
               icon={MagnifyingGlassCircleIcon}
-              onClick={() => onSendToEnricher(enrichSource.filter((r) => r.website))}
+              onClick={() => onSendToEnricher(enrichSource.filter((r) => r.website), listName)}
               disabled={enrichSource.every((r) => !r.website)}
             >
               Find emails for {enrichSource.filter((r) => r.website).length}

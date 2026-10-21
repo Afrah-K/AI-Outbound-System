@@ -10,6 +10,7 @@ import AwwwardsPanel, { AWWWARDS_COLUMNS, AWWWARDS_SEARCH_KEYS } from '../compon
 import GoogleMapsPanel, { GOOGLE_MAPS_COLUMNS, GOOGLE_MAPS_SEARCH_KEYS } from '../components/scrapers/GoogleMapsPanel'
 import { loadCached, saveCached } from '../components/scrapers/shared'
 import { useTask } from '../context/BackgroundTasks'
+import { describeRun } from '../utils/listNames'
 
 const ACTIVE_TAB_KEY = 'scraper_active_tab'
 
@@ -19,21 +20,21 @@ const SOURCES = {
     columns: CLUTCH_COLUMNS,
     searchKeys: CLUTCH_SEARCH_KEYS,
     cacheKey: 'scraper_last_results',
-    filename: 'clutch_leads.csv',
+    label: 'Clutch',
   },
   awwwards: {
     Panel: AwwwardsPanel,
     columns: AWWWARDS_COLUMNS,
     searchKeys: AWWWARDS_SEARCH_KEYS,
     cacheKey: 'scraper_last_results_awwwards',
-    filename: 'awwwards_leads.csv',
+    label: 'Awwwards',
   },
   google_maps: {
     Panel: GoogleMapsPanel,
     columns: GOOGLE_MAPS_COLUMNS,
     searchKeys: GOOGLE_MAPS_SEARCH_KEYS,
     cacheKey: 'scraper_last_results_google_maps',
-    filename: 'google_maps_leads.csv',
+    label: 'Google Maps',
   },
 }
 
@@ -132,9 +133,10 @@ export default function ScrapersPage() {
           results={results}
           columns={source.columns}
           csvFields={scraper?.fields || source.columns.map((c) => c.key)}
-          filename={source.filename}
+          // What was scraped, e.g. "Clutch - UI/UX Design, Branding - Oct 21" (or what was uploaded)
+          listName={describeRun(source.label, (results.stats || []).map((s) => s.category))}
           searchKeys={source.searchKeys}
-          onSendToEnricher={(rows) => navigate('/enricher', { state: { scrapedRows: rows } })}
+          onSendToEnricher={(rows, listName) => navigate('/enricher', { state: { scrapedRows: rows, listName } })}
         />
       ) : busy ? null : (
         <Card>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.database import get_db
 from app.models import AgentDraft, Campaign, CampaignLead, Company, EmailLog, LeadList, LeadListMember, Person, LeadStatus, SendQueue
-from app.services.lead_import import LeadImportError, group_unlisted_prospects, import_leads_csv, is_csv_filename
+from app.services.lead_import import LeadImportError, group_unlisted_prospects, import_leads_csv, is_csv_filename, list_name_from_filename
 from app.services.enrichment import enrich_company, load_unpicked, save_unpicked
 from app.services.verification import guess_segment, is_generic_address, verify_email
 from app.services.jobs import JobRun, enqueue_job, get_job, job_handler, to_dict
@@ -258,6 +258,73 @@ async def import_csv(
     return result
 
 
+class ListEntry(BaseModel):
+    email: str
+    company_id: Optional[int] = None
+
+
+class CreateListRequest(BaseModel):
+    name: str
+    entries: List[ListEntry]
+
+
+@router.post("/lists")
+async def create_lead_list(payload: CreateListRequest, db: Session = Depends(get_db)):
+    """
+    Save a set of emails as a named lead list (e.g. the Enricher's results).
+    Emails that are already prospects are reused; new ones become prospects,
+    linked to their company. Invalid addresses are skipped.
+    """
+    from app.services.lead_import import EMAIL_RE
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Give the list a name")
+    if len(name) > 255:
+        raise HTTPException(status_code=400, detail="List name is too long (255 characters max)")
+
+    entries, seen = [], set()
+    for entry in payload.entries:
+        email = entry.email.strip().lower()
+        if email and email not in seen and EMAIL_RE.match(email):
+            seen.add(email)
+            entries.append((email, entry.company_id))
+    if not entries:
+        raise HTTPException(status_code=400, detail="No valid email addresses to add")
+
+    company_ids = {cid for _, cid in entries if cid}
+    valid_companies = {cid for (cid,) in db.query(Company.id).filter(Company.id.in_(company_ids))} if company_ids else set()
+    existing = {
+        p.email.lower(): p
+        for p in db.query(Person).filter(func.lower(Person.email).in_([e for e, _ in entries]))
+    }
+
+    person_ids, created = [], 0
+    for email, company_id in entries:
+        person = existing.get(email)
+        if person is None:
+            person = Person(email=email, company_id=company_id if company_id in valid_companies else None, status=LeadStatus.NEW)
+            db.add(person)
+            db.flush()
+            created += 1
+        elif person.company_id is None and company_id in valid_companies:
+            person.company_id = company_id
+        person_ids.append(person.id)
+
+    lead_list = LeadList(name=name)
+    db.add(lead_list)
+    db.flush()
+    db.add_all(LeadListMember(lead_list_id=lead_list.id, person_id=pid) for pid in dict.fromkeys(person_ids))
+    db.commit()
+    return {
+        "id": lead_list.id,
+        "name": lead_list.name,
+        "added": len(person_ids),
+        "new_prospects": created,
+        "already_prospects": len(person_ids) - created,
+    }
+
+
 @router.get("/lists")
 async def list_lead_lists(db: Session = Depends(get_db)):
     """
@@ -374,6 +441,27 @@ async def bulk_delete_people(payload: BulkDeletePeopleRequest, db: Session = Dep
     return result
 
 
+class RenameListRequest(BaseModel):
+    name: str
+
+
+@router.patch("/lists/{list_id}")
+async def rename_lead_list(list_id: int, payload: RenameListRequest, db: Session = Depends(get_db)):
+    """Rename a lead list."""
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="List name can't be empty")
+    if len(name) > 255:
+        raise HTTPException(status_code=400, detail="List name is too long (255 characters max)")
+
+    lead_list = db.query(LeadList).filter(LeadList.id == list_id, LeadList.deleted_at.is_(None)).first()
+    if not lead_list:
+        raise HTTPException(status_code=404, detail="Lead list not found")
+    lead_list.name = name
+    db.commit()
+    return {"id": lead_list.id, "name": lead_list.name}
+
+
 @router.delete("/lists/{list_id}")
 async def delete_lead_list(list_id: int, db: Session = Depends(get_db)):
     """
@@ -474,6 +562,7 @@ MAX_ENRICH_UPLOAD_ROWS = 100000
 async def upload_and_enrich(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    source_name: Optional[str] = Form(None, description="What this list is called, e.g. \"Clutch - Branding - Oct 21\" (defaults to the filename)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -552,13 +641,17 @@ async def upload_and_enrich(
 
     db.commit()
 
-    job = enqueue_job(db, "enrich", {"company_ids": [c.id for c in companies]}, total=len(companies))
-    return {"job_id": job["job_id"], "total": job["total"]}
+    # The run keeps the list's name so its export and lead list are named after it
+    name = ((source_name or "").strip() or list_name_from_filename(file.filename))[:255]
+    job = enqueue_job(db, "enrich", {"company_ids": [c.id for c in companies], "source_name": name},
+                      total=len(companies))
+    return {"job_id": job["job_id"], "total": job["total"], "source_name": name}
 
 
 class RescanRequest(BaseModel):
     company_ids: List[int]
     force_ids: List[int] = []
+    source_name: Optional[str] = None
 
 
 @router.post("/enrich/rescan")
@@ -573,9 +666,10 @@ async def rescan_companies(payload: RescanRequest, db: Session = Depends(get_db)
     if len(payload.company_ids) > MAX_ENRICH_UPLOAD_ROWS:
         raise HTTPException(status_code=400, detail=f"Max {MAX_ENRICH_UPLOAD_ROWS} companies per run")
 
-    job = enqueue_job(db, "enrich", {"company_ids": payload.company_ids, "force_ids": payload.force_ids},
+    job = enqueue_job(db, "enrich", {"company_ids": payload.company_ids, "force_ids": payload.force_ids,
+                                     "source_name": (payload.source_name or "").strip()[:255] or None},
                       total=len(payload.company_ids))
-    return {"job_id": job["job_id"], "total": job["total"]}
+    return {"job_id": job["job_id"], "total": job["total"], "source_name": payload.source_name}
 
 
 @router.get("/enrich/jobs/{job_id}")
@@ -592,6 +686,7 @@ async def get_enrich_job_status(job_id: str, db: Session = Depends(get_db)):
         "processed": data["processed"],
         "emails_found": data["extra"].get("emails_found", 0),
         "error": data["error"],
+        "source_name": (job.payload or {}).get("source_name"),
         "results": data["result"] or [],
     }
 

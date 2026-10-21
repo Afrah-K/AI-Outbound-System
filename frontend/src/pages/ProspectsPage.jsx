@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   UserGroupIcon,
@@ -25,6 +25,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
 import ConfirmDialog from '../components/common/ConfirmDialog'
 import toast from 'react-hot-toast'
+import { nameFromFile } from '../utils/listNames'
 
 const PER_PAGE = 30
 
@@ -194,7 +195,7 @@ function ImportModal({ onClose }) {
                 type="text"
                 value={listName}
                 onChange={(e) => setListName(e.target.value)}
-                placeholder={selectedFile?.name || 'Defaults to the file name'}
+                placeholder={selectedFile ? nameFromFile(selectedFile.name) : 'Defaults to the file name'}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
               <p className="mt-1 text-xs text-gray-500">Pick this list on a campaign's page to email everyone in it</p>
@@ -231,6 +232,66 @@ function skippedSummary(skipped) {
   if (skipped?.uncontactable) parts.push(`${skipped.uncontactable} not contactable`)
   if (skipped?.not_found) parts.push(`${skipped.not_found} no longer exist`)
   return parts.length ? ` (skipped ${parts.join(', ')})` : ''
+}
+
+/** The selected list's name, editable in place: click and type; Enter or clicking away saves, Escape undoes. */
+function ListName({ list }) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState(list.name)
+  const inputRef = useRef(null)
+  const cancelledRef = useRef(false)
+
+  // Pick up a different list (or a saved rename) unless mid-edit
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) setName(list.name)
+  }, [list.id, list.name])
+
+  const renameMutation = useMutation({
+    mutationFn: (newName) => api.leads.renameList(list.id, newName),
+    onSuccess: (_response, newName) => {
+      toast.success(`Renamed the list to "${newName}"`)
+      queryClient.invalidateQueries({ queryKey: ['leadLists'] })
+    },
+    onError: () => setName(list.name),
+  })
+
+  const save = () => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false
+      return
+    }
+    const trimmed = name.trim()
+    if (!trimmed) {
+      toast.error("List name can't be empty")
+      setName(list.name)
+      return
+    }
+    if (trimmed !== name) setName(trimmed)
+    if (trimmed !== list.name) renameMutation.mutate(trimmed)
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          cancelledRef.current = true
+          setName(list.name)
+          e.currentTarget.blur()
+        }
+      }}
+      maxLength={255}
+      size={Math.max(6, Math.min(48, name.length + 1))}
+      aria-label="Lead list name - click to rename"
+      title="Click to rename"
+      disabled={renameMutation.isPending}
+      className="-ml-1.5 rounded-lg border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-medium text-gray-900 hover:border-primary-200 hover:bg-white focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-70"
+    />
+  )
 }
 
 /** Shown while a lead list is picked in the filter: send the whole list to a campaign. */
@@ -298,9 +359,9 @@ function ListCampaignBar({ list, onClear }) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-card border border-primary-200 bg-primary-50 px-5 py-3">
       <QueueListIcon className="h-5 w-5 text-primary-600 shrink-0" />
-      <span className="text-sm text-gray-900">
-        <span className="font-medium">{list.name}</span>
-        <span className="text-gray-500"> - {list.lead_count} prospect{list.lead_count === 1 ? '' : 's'}</span>
+      <span className="flex items-center text-sm text-gray-900">
+        <ListName list={list} />
+        <span className="text-gray-500 whitespace-nowrap">- {list.lead_count} prospect{list.lead_count === 1 ? '' : 's'}</span>
       </span>
       <div className="flex items-center gap-2">
         <select
@@ -541,7 +602,13 @@ function BulkBar({ selectedIds, onClear }) {
 export default function ProspectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
-  const [listId, setListId] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  // ?list=<id> (e.g. from the Enricher's "Add to Prospects") opens straight to that list
+  const [listId, setListId] = useState(() => searchParams.get('list') || '')
+  useEffect(() => {
+    if (searchParams.has('list')) setSearchParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [page, setPage] = useState(0)
   const [selected, setSelected] = useState(() => new Set())
   const [showImport, setShowImport] = useState(false)

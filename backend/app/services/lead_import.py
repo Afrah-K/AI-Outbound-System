@@ -52,6 +52,16 @@ def is_csv_filename(filename: Optional[str]) -> bool:
     return bool(filename) and filename.lower().endswith(ALLOWED_EXTENSIONS)
 
 
+def list_name_from_filename(filename: Optional[str]) -> str:
+    """The lead list name a file's name suggests: "clutch_leads (2).csv" -> "clutch leads (2)".
+
+    Exports name their files after the list ("Clutch - Branding - Oct 21.csv"),
+    so importing one gives the list back its name. Mirrors nameFromFile in the frontend.
+    """
+    stem = re.sub(r"\.(csv|tsv|txt)$", "", (filename or "").strip(), flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", stem.replace("_", " ")).strip()[:255] or "Imported leads"
+
+
 def _normalize_key(name: str) -> str:
     return (name or "").replace("﻿", "").strip().strip('"').lower().replace(" ", "_")
 
@@ -289,7 +299,7 @@ def import_leads_csv(
 
     lead_list = None
     if person_ids:
-        lead_list = LeadList(name=(list_name or "").strip() or filename, source_filename=filename)
+        lead_list = LeadList(name=(list_name or "").strip() or list_name_from_filename(filename), source_filename=filename)
         db.add(lead_list)
         db.flush()
         db.add_all(LeadListMember(lead_list_id=lead_list.id, person_id=pid) for pid in person_ids)

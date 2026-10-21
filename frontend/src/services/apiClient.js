@@ -98,6 +98,9 @@ export const api = {
       apiClient.patch(`/api/v1/leads/people/${id}/status`, null, { params: { status } }),
     listLists: () => apiClient.get('/api/v1/leads/lists'),
     deleteList: (id) => apiClient.delete(`/api/v1/leads/lists/${id}`),
+    renameList: (id, name) => apiClient.patch(`/api/v1/leads/lists/${id}`, { name }),
+    // entries: [{ email, company_id }]
+    createList: (name, entries) => apiClient.post('/api/v1/leads/lists', { name, entries }),
     importCSV: (formData, updateExisting = false, listName = '') =>
       apiClient.post('/api/v1/leads/import', formData, {
         params: { update_existing: updateExisting, list_name: listName || undefined },
@@ -108,8 +111,8 @@ export const api = {
         headers: { 'Content-Type': 'multipart/form-data' },
       }),
     getEnrichJob: (jobId) => apiClient.get(`/api/v1/leads/enrich/jobs/${jobId}`),
-    rescanEnrich: (companyIds, forceIds) =>
-      apiClient.post('/api/v1/leads/enrich/rescan', { company_ids: companyIds, force_ids: forceIds }),
+    rescanEnrich: (companyIds, forceIds, sourceName = null) =>
+      apiClient.post('/api/v1/leads/enrich/rescan', { company_ids: companyIds, force_ids: forceIds, source_name: sourceName }),
     pickEmail: (companyId, email) =>
       apiClient.post(`/api/v1/leads/companies/${companyId}/emails/pick`, { email }),
     startVerifyJob: (results) => apiClient.post('/api/v1/leads/verify/jobs', { results }),

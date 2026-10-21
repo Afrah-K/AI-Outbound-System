@@ -13,6 +13,8 @@ import {
   ShieldCheckIcon,
   EyeIcon,
   EyeSlashIcon,
+  UserPlusIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline'
 import { api } from '../services/apiClient'
 import { useTask } from '../context/BackgroundTasks'
@@ -21,6 +23,8 @@ import Card from '../components/common/Card'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
 import UnpickedEmailsPanel from '../components/enricher/UnpickedEmailsPanel'
+import ExportDialog from '../components/common/ExportDialog'
+import { shortDate, toFileName } from '../utils/listNames'
 import toast from 'react-hot-toast'
 
 const RESULTS_PAGE_SIZE = 40
@@ -32,7 +36,7 @@ function scrapedRowsToCSV(rows) {
   return [header.join(','), ...lines].join('\n')
 }
 
-function downloadResultsCSV(results) {
+function downloadResultsCSV(results, fileName) {
   const header = ['name', 'website', 'status', 'emails', 'unpicked_emails']
   const rows = results.map((r) => [
     r.name || '',
@@ -49,7 +53,7 @@ function downloadResultsCSV(results) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'enriched_leads.csv'
+  a.download = fileName
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -63,6 +67,141 @@ function loadCachedJob() {
   } catch {
     return null
   }
+}
+
+/**
+ * A run is named after the list it came from - "Clutch - Branding - Oct 21" from
+ * the scraper, or an uploaded file's name - so the lead list it becomes keeps it.
+ */
+function runName(job) {
+  return job?.source_name || `Enriched leads - ${shortDate()}`
+}
+
+/** The export gets "- enriched" so it doesn't collide with the scraped CSV of the same list. */
+function exportName(job) {
+  const name = runName(job)
+  return /enriched/i.test(name) ? name : `${name} - enriched`
+}
+
+/** Export CSV, with a chance to rename the file first. */
+function ExportResults({ results, job }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant="secondary" size="sm" icon={ArrowDownTrayIcon} onClick={() => setOpen(true)}>
+        Export CSV
+      </Button>
+      <ExportDialog
+        open={open}
+        defaultName={exportName(job)}
+        count={results.length}
+        onExport={(fileName) => downloadResultsCSV(results, fileName)}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  )
+}
+
+/** Save the found emails as a named lead list on the Prospects page. */
+function AddToProspects({ results, jobId, defaultName }) {
+  const navigate = useNavigate()
+  const entries = results.flatMap((r) => r.emails.map((email) => ({ email, company_id: r.company_id })))
+  const companies = new Set(results.filter((r) => r.emails.length > 0).map((r) => r.company_id ?? r.name)).size
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState(defaultName)
+  const [saved, setSaved] = useState(null)
+
+  // A new enrichment run starts fresh, named after its own list
+  useEffect(() => {
+    setSaved(null)
+    setName(defaultName)
+  }, [jobId, defaultName])
+
+  const addMutation = useMutation({
+    mutationFn: () => api.leads.createList(name.trim(), entries),
+    onSuccess: (response) => {
+      const r = response.data
+      setSaved(r)
+      setOpen(false)
+      toast.success(
+        (t) => (
+          <span className="flex items-center gap-3">
+            <span>
+              Added {r.added} to "{r.name}"
+              {r.already_prospects ? ` (${r.already_prospects} were already prospects)` : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(t.id)
+                navigate(`/prospects?list=${r.id}`)
+              }}
+              className="shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium hover:bg-white/25"
+            >
+              View
+            </button>
+          </span>
+        ),
+        { duration: 8000 }
+      )
+    },
+    onError: (error) => toast.error(error.response?.data?.detail || 'Could not add to Prospects'),
+  })
+
+  if (saved) {
+    return (
+      <Button size="sm" variant="secondary" icon={CheckIcon} onClick={() => navigate(`/prospects?list=${saved.id}`)}>
+        In Prospects: {saved.name}
+      </Button>
+    )
+  }
+
+  return (
+    <>
+      <Button size="sm" icon={UserPlusIcon} onClick={() => setOpen(true)} disabled={entries.length === 0}>
+        Add to Prospects ({entries.length})
+      </Button>
+      {open && (
+        <div className="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="add-to-prospects-title">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="fixed inset-0 bg-gray-900/40" onClick={() => !addMutation.isPending && setOpen(false)} />
+            <form
+              className="relative w-full max-w-md rounded-card bg-white p-6 shadow-xl"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (name.trim()) addMutation.mutate()
+              }}
+            >
+              <h3 id="add-to-prospects-title" className="text-lg font-medium tracking-tight text-gray-900">
+                Add to Prospects
+              </h3>
+              <p className="mt-1 text-sm text-gray-600">
+                Saves {entries.length} email{entries.length === 1 ? '' : 's'} from {companies} compan{companies === 1 ? 'y' : 'ies'} as a
+                lead list - ready to add to a campaign. Anyone already in Prospects isn't duplicated.
+              </p>
+              <label htmlFor="enriched-list-name" className="mt-4 block text-sm font-medium text-gray-700">List name</label>
+              <input
+                id="enriched-list-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={255}
+                autoFocus
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-primary-500 focus:ring-2 focus:ring-primary-500"
+              />
+              <div className="mt-6 flex justify-end gap-3">
+                <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={addMutation.isPending}>
+                  Cancel
+                </Button>
+                <Button type="submit" icon={UserPlusIcon} loading={addMutation.isPending} disabled={!name.trim()}>
+                  Add {entries.length}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
 
 export default function EnricherPage() {
@@ -79,9 +218,10 @@ export default function EnricherPage() {
   const incomingRows = location.state?.scrapedRows
 
   const startJob = useMutation({
-    mutationFn: async (file) => {
+    mutationFn: async ({ file, sourceName }) => {
       const formData = new FormData()
       formData.append('file', file)
+      if (sourceName) formData.append('source_name', sourceName)
       return api.leads.enrichUpload(formData)
     },
     onSuccess: (response) => handleJobStarted(response, (total) => `Enriching ${total} compan${total === 1 ? 'y' : 'ies'}`),
@@ -91,8 +231,8 @@ export default function EnricherPage() {
   })
 
   const handleJobStarted = (response, label) => {
-    const { job_id, total } = response.data
-    const newJob = { job_id, status: 'running', total, processed: 0, emails_found: 0, results: [] }
+    const { job_id, total, source_name } = response.data
+    const newJob = { job_id, status: 'running', total, processed: 0, emails_found: 0, source_name, results: [] }
     setJob(newJob)
     start(newJob, { label: label(total) })
     setResultsPage(1)
@@ -104,7 +244,7 @@ export default function EnricherPage() {
     mutationFn: () => {
       const all = job.results.map((r) => r.company_id)
       const untracked = job.results.filter((r) => r.unpicked_tracked === false).map((r) => r.company_id)
-      return api.leads.rescanEnrich(all, untracked)
+      return api.leads.rescanEnrich(all, untracked, job.source_name)
     },
     onSuccess: (response) => handleJobStarted(response, (total) => `Re-scanning ${total} companies for unpicked emails`),
   })
@@ -156,8 +296,9 @@ export default function EnricherPage() {
 
     const csv = scrapedRowsToCSV(incomingRows)
     const blob = new Blob([csv], { type: 'text/csv' })
-    const file = new File([blob], 'scraped_leads.csv', { type: 'text/csv' })
-    startJob.mutate(file)
+    const sourceName = location.state?.listName
+    const file = new File([blob], toFileName(sourceName || 'Scraped leads'), { type: 'text/csv' })
+    startJob.mutate({ file, sourceName })
 
     // Clear the handoff state so a refresh or revisit doesn't re-trigger it
     navigate(location.pathname, { replace: true })
@@ -212,7 +353,7 @@ export default function EnricherPage() {
               setDragActive={setDragActive}
               handleFile={handleFile}
               handleDrop={handleDrop}
-              onSubmit={() => startJob.mutate(selectedFile)}
+              onSubmit={() => startJob.mutate({ file: selectedFile })}
               loading={startJob.isPending || isRunning}
             />
           </Card>
@@ -234,7 +375,7 @@ export default function EnricherPage() {
             setDragActive={setDragActive}
             handleFile={handleFile}
             handleDrop={handleDrop}
-            onSubmit={() => startJob.mutate(selectedFile)}
+            onSubmit={() => startJob.mutate({ file: selectedFile })}
             loading={startJob.isPending || isRunning}
           />
         </Card>
@@ -311,16 +452,16 @@ export default function EnricherPage() {
                 >
                   {showUnpicked ? 'Hide' : 'Show'} unpicked emails ({unpickedCount})
                 </Button>
-                <Button variant="secondary" size="sm" icon={ArrowDownTrayIcon} onClick={() => downloadResultsCSV(results)}>
-                  Export CSV
-                </Button>
+                <ExportResults results={results} job={job} />
                 <Button
                   size="sm"
+                  variant="secondary"
                   icon={ShieldCheckIcon}
                   onClick={() => navigate('/verifier', { state: { enrichResults: results } })}
                 >
                   Verify this list
                 </Button>
+                <AddToProspects results={results} jobId={job?.job_id} defaultName={runName(job)} />
               </div>
             </div>
             <div className="overflow-x-auto mt-4">
@@ -385,9 +526,7 @@ export default function EnricherPage() {
                   Page {resultsPage} of {totalPages}
                 </p>
                 <div className="flex gap-2">
-                  <Button variant="secondary" size="sm" icon={ArrowDownTrayIcon} onClick={() => downloadResultsCSV(results)}>
-                    Export CSV
-                  </Button>
+                  <ExportResults results={results} job={job} />
                   <Button
                     variant="secondary"
                     size="sm"
