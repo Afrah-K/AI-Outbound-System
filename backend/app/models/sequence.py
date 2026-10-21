@@ -9,6 +9,7 @@ class Sequence(Base):
     __tablename__ = "sequences"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     name = Column(String(255), nullable=False)
     description = Column(Text)
 
@@ -33,6 +34,7 @@ class SequenceStep(Base):
     __tablename__ = "sequence_steps"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     sequence_id = Column(Integer, ForeignKey("sequences.id"), index=True)
 
     order = Column(Integer, nullable=False)  # Step number (0, 1, 2...)

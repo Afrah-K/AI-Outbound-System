@@ -4,7 +4,7 @@ export default function Card({ children, className, padding = true, ...props }) 
   return (
     <div
       className={clsx(
-        'bg-white rounded-xl shadow-sm border border-gray-200',
+        'bg-white rounded-card',
         padding && 'p-6',
         className
       )}
@@ -25,7 +25,7 @@ Card.Header = function CardHeader({ children, className }) {
 
 Card.Title = function CardTitle({ children, className }) {
   return (
-    <h3 className={clsx('text-lg font-semibold text-gray-900', className)}>
+    <h3 className={clsx('text-lg font-medium tracking-tight text-gray-900', className)}>
       {children}
     </h3>
   )

@@ -30,12 +30,13 @@ class EmailLog(Base):
     __tablename__ = "email_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
 
     # Associations
-    inbox_id = Column(Integer, ForeignKey("inboxes.id"), index=True)
+    inbox_id = Column(Integer, ForeignKey("inboxes.id", ondelete="SET NULL"), index=True)
     person_id = Column(Integer, ForeignKey("people.id"), index=True)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), index=True)
-    sequence_step_id = Column(Integer, ForeignKey("sequence_steps.id"))
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), index=True)
+    sequence_step_id = Column(Integer, ForeignKey("sequence_steps.id", ondelete="SET NULL"))
 
     # Email details
     email_type = Column(Enum(EmailType), default=EmailType.CAMPAIGN)

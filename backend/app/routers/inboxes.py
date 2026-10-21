@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -149,9 +151,20 @@ async def oauth_callback(
 
             # Redirect to frontend with success
             return RedirectResponse(
-                url=f"http://localhost:5173/inboxes?connected={email}&updated=true"
+                url=f"{settings.app_base_url.rstrip('/')}/inboxes?connected={email}&updated=true"
             )
         else:
+            # A mailbox can only belong to one account's workspace
+            from app.tenancy import system_context
+
+            with system_context():
+                taken = db.query(Inbox.id).filter(Inbox.email_address == email).first()
+            if taken:
+                return RedirectResponse(
+                    url=f"{settings.app_base_url.rstrip('/')}/inboxes?error="
+                    + quote(f"{email} is already connected to a different account")
+                )
+
             # Create new inbox
             inbox = Inbox(
                 email_address=email,
@@ -168,7 +181,7 @@ async def oauth_callback(
 
             # Redirect to frontend with success
             return RedirectResponse(
-                url=f"http://localhost:5173/inboxes?connected={email}"
+                url=f"{settings.app_base_url.rstrip('/')}/inboxes?connected={email}"
             )
 
     except Exception as e:

@@ -18,11 +18,12 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     name = Column(String(255), nullable=False)
     description = Column(Text)
 
     # Sequence assignment
-    sequence_id = Column(Integer, ForeignKey("sequences.id"))
+    sequence_id = Column(Integer, ForeignKey("sequences.id", ondelete="SET NULL"))
 
     # Status
     status = Column(Enum(CampaignStatus), default=CampaignStatus.DRAFT, index=True)
@@ -32,6 +33,13 @@ class Campaign(Base):
     send_end_time = Column(String(5), default="17:00")
     timezone = Column(String(50), default="America/New_York")
     send_on_weekends = Column(Boolean, default=False)
+
+    # Pacing: after each email this campaign sends, wait a random number of
+    # minutes in [min, max] before its next one, so sends trickle out in breaks.
+    # 0/0 = no campaign-level pause (inboxes' own short send gaps still apply).
+    min_gap_minutes = Column(Integer, default=2)
+    max_gap_minutes = Column(Integer, default=5)
+    next_send_after = Column(DateTime)  # earliest time the campaign may send again
 
     # Settings
     stop_on_reply = Column(Boolean, default=True)
@@ -64,8 +72,9 @@ class CampaignInbox(Base):
     __tablename__ = "campaign_inboxes"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), index=True)
-    inbox_id = Column(Integer, ForeignKey("inboxes.id"), index=True)
+    inbox_id = Column(Integer, ForeignKey("inboxes.id", ondelete="CASCADE"), index=True)
 
     campaign = relationship("Campaign", back_populates="campaign_inboxes")
     inbox = relationship("Inbox", back_populates="campaign_inboxes")
@@ -83,6 +92,7 @@ class CampaignLead(Base):
     __tablename__ = "campaign_leads"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), index=True)
     person_id = Column(Integer, ForeignKey("people.id"), index=True)
 

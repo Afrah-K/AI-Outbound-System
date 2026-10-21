@@ -53,6 +53,8 @@ class GmailService:
         reply_to: Optional[str] = None,
         thread_id: Optional[str] = None,
         html: bool = False,
+        in_reply_to: Optional[str] = None,
+        references: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Send an email via Gmail API.
@@ -65,6 +67,8 @@ class GmailService:
             reply_to: Reply-to email address
             thread_id: Gmail thread ID for replies
             html: Whether the body is HTML
+            in_reply_to: Message-ID header of the message being replied to
+            references: References header chain, so the recipient's client threads the reply
 
         Returns:
             Dict with message_id, thread_id, and label_ids
@@ -87,6 +91,10 @@ class GmailService:
 
         if reply_to:
             message["reply-to"] = reply_to
+
+        if in_reply_to:
+            message["In-Reply-To"] = in_reply_to
+            message["References"] = f"{references} {in_reply_to}".strip() if references else in_reply_to
 
         # Encode message
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
@@ -131,6 +139,41 @@ class GmailService:
             return self._parse_message(message)
         except HttpError as e:
             raise Exception(f"Failed to get message: {e}")
+
+    def get_rfc822_message_id(self, message_id: str) -> Optional[str]:
+        """The Message-ID header of a message in this mailbox (e.g. one just sent)."""
+        try:
+            msg = (
+                self._service.users().messages()
+                .get(userId="me", id=message_id, format="metadata", metadataHeaders=["Message-ID"])
+                .execute()
+            )
+        except HttpError as e:
+            raise Exception(f"Failed to read message headers: {e}")
+        for header in msg.get("payload", {}).get("headers", []):
+            if header.get("name", "").lower() == "message-id":
+                return header.get("value")
+        return None
+
+    def find_labels_by_rfc822_id(self, rfc822_message_id: str) -> Optional[List[str]]:
+        """
+        Labels of the message with this Message-ID in this mailbox - including
+        Spam and Trash - or None if it hasn't arrived (yet).
+        """
+        query = f"rfc822msgid:{rfc822_message_id.strip().strip('<>')}"
+        try:
+            found = (
+                self._service.users().messages()
+                .list(userId="me", q=query, includeSpamTrash=True, maxResults=5)
+                .execute()
+            )
+            messages = found.get("messages", [])
+            if not messages:
+                return None
+            msg = self._service.users().messages().get(userId="me", id=messages[0]["id"], format="minimal").execute()
+            return msg.get("labelIds", [])
+        except HttpError as e:
+            raise Exception(f"Failed to search mailbox: {e}")
 
     def get_thread(self, thread_id: str) -> List[Dict[str, Any]]:
         """
@@ -202,6 +245,55 @@ class GmailService:
         except HttpError as e:
             raise Exception(f"Failed to list messages: {e}")
 
+    def list_message_metadata(
+        self,
+        query: str = "",
+        max_results: int = 50,
+        label_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Like list_messages, but fetches only headers + snippet (no bodies) -
+        much cheaper when scanning an inbox for which messages matter.
+        """
+        try:
+            results = self._service.users().messages().list(
+                userId="me",
+                q=query,
+                maxResults=max_results,
+                labelIds=label_ids,
+            ).execute()
+
+            ids = [m["id"] for m in results.get("messages", [])]
+            fetched = {}
+            errors = []
+
+            def collect(request_id, response, exception):
+                if exception is not None:
+                    errors.append(exception)
+                else:
+                    fetched[request_id] = response
+
+            # One HTTP round trip per 100 messages (Gmail's batch limit) instead of one request each.
+            for start in range(0, len(ids), 100):
+                batch = self._service.new_batch_http_request(callback=collect)
+                for message_id in ids[start:start + 100]:
+                    batch.add(
+                        self._service.users().messages().get(
+                            userId="me",
+                            id=message_id,
+                            format="metadata",
+                            metadataHeaders=["From", "To", "Subject", "Date", "Message-ID"],
+                        ),
+                        request_id=message_id,
+                    )
+                batch.execute()
+            if errors and not fetched:
+                raise errors[0]
+
+            return [self._parse_message(fetched[i]) for i in ids if i in fetched]
+        except HttpError as e:
+            raise Exception(f"Failed to list messages: {e}")
+
     def get_profile(self) -> Dict[str, Any]:
         """
         Get the authenticated user's Gmail profile.
@@ -221,16 +313,7 @@ class GmailService:
             for h in message.get("payload", {}).get("headers", [])
         }
 
-        # Get body
-        body = ""
-        payload = message.get("payload", {})
-        if "body" in payload and payload["body"].get("data"):
-            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode()
-        elif "parts" in payload:
-            for part in payload["parts"]:
-                if part["mimeType"] == "text/plain" and part["body"].get("data"):
-                    body = base64.urlsafe_b64decode(part["body"]["data"]).decode()
-                    break
+        body = self._extract_body(message.get("payload", {}))
 
         return {
             "id": message["id"],
@@ -240,6 +323,47 @@ class GmailService:
             "to": headers.get("to", ""),
             "subject": headers.get("subject", ""),
             "date": headers.get("date", ""),
+            # Epoch ms as a string - the only reliable way to sort messages by
+            # time; the "date" header is an RFC 2822 string that doesn't sort
+            # correctly as plain text.
+            "internal_date": message.get("internalDate"),
             "body": body,
             "snippet": message.get("snippet", ""),
+            # RFC Message-ID / References headers - needed to thread a reply in the recipient's client.
+            "message_id_header": headers.get("message-id", ""),
+            "references": headers.get("references", ""),
         }
+
+    @staticmethod
+    def _decode_part(part: Dict[str, Any]) -> str:
+        data = part.get("body", {}).get("data")
+        if not data:
+            return ""
+        return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+
+    def _extract_body(self, payload: Dict[str, Any]) -> str:
+        """
+        Find the readable body anywhere in a (possibly nested) MIME tree:
+        prefer text/plain, else text/html with the tags stripped. Real replies
+        are usually multipart/alternative nested inside multipart/mixed.
+        """
+        plain, html = [], []
+
+        def walk(part):
+            mime = part.get("mimeType", "")
+            if mime == "text/plain":
+                plain.append(self._decode_part(part))
+            elif mime == "text/html":
+                html.append(self._decode_part(part))
+            for child in part.get("parts", []) or []:
+                walk(child)
+
+        walk(payload)
+        text = next((t for t in plain if t.strip()), "")
+        if text:
+            return text
+        markup = next((h for h in html if h.strip()), "")
+        if markup:
+            from bs4 import BeautifulSoup
+            return BeautifulSoup(markup, "html.parser").get_text("\n").strip()
+        return self._decode_part(payload)

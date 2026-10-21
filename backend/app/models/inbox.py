@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Enum, Text
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Enum, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -18,6 +18,7 @@ class Inbox(Base):
     __tablename__ = "inboxes"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     email_address = Column(String(255), unique=True, nullable=False, index=True)
     domain = Column(String(255), nullable=False, index=True)
     display_name = Column(String(255))
@@ -54,8 +55,10 @@ class Inbox(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    # Deleting an inbox keeps its sent-email history (inbox_id becomes empty) and
+    # removes it from campaigns' sending pools
     email_logs = relationship("EmailLog", back_populates="inbox")
-    campaign_inboxes = relationship("CampaignInbox", back_populates="inbox")
+    campaign_inboxes = relationship("CampaignInbox", back_populates="inbox", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Inbox {self.email_address}>"

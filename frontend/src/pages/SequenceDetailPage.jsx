@@ -1,6 +1,8 @@
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
+import { PencilSquareIcon } from '@heroicons/react/24/outline'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/apiClient'
+import Button from '../components/common/Button'
 import Card from '../components/common/Card'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 
@@ -29,9 +31,14 @@ export default function SequenceDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">{sequence.name}</h1>
-        <p className="mt-1 text-sm text-gray-500">{sequence.description}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-medium tracking-tight text-gray-900">{sequence.name}</h1>
+          <p className="mt-1 text-sm text-gray-500">{sequence.description}</p>
+        </div>
+        <Link to={`/sequences/${sequence.id}/edit`}>
+          <Button variant="secondary" icon={PencilSquareIcon}>Edit</Button>
+        </Link>
       </div>
 
       <div className="space-y-4">
@@ -49,7 +56,7 @@ export default function SequenceDetailPage() {
                       : 'Send immediately'}
                   </span>
                   {step.use_gpt && (
-                    <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-800 rounded-full">
+                    <span className="px-2 py-0.5 text-xs bg-primary-100 text-primary-800 rounded-full">
                       GPT
                     </span>
                   )}

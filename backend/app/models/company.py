@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -7,10 +7,12 @@ from app.models.base import Base
 
 class Company(Base):
     __tablename__ = "companies"
+    __table_args__ = (UniqueConstraint("owner_id", "domain", name="uq_companies_owner_domain"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
     name = Column(String(255), nullable=False, index=True)
-    domain = Column(String(255), unique=True, index=True)
+    domain = Column(String(255), index=True)
     website = Column(String(512))
 
     # Company details (from Apollo CSV)
@@ -29,6 +31,9 @@ class Company(Base):
     last_enriched_at = Column(DateTime)
     enrichment_status = Column(String(50), default="pending")  # pending, completed, failed
     enrichment_error = Column(Text)
+    # JSON list of {"email", "reason"}: addresses the Enricher found but didn't
+    # turn into prospects (over the per-company limit, or on another domain)
+    unpicked_emails = Column(Text)
 
     # Deduplication
     apollo_id = Column(String(100), index=True)  # Original Apollo ID if available

@@ -5,6 +5,7 @@ import { api } from '../services/apiClient'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
 import StatusBadge from '../components/common/StatusBadge'
+import SendingState from '../components/common/SendingState'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
 import toast from 'react-hot-toast'
@@ -56,7 +57,7 @@ export default function CampaignsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
+          <h1 className="text-3xl font-medium tracking-tight text-gray-900">Campaigns</h1>
           <p className="mt-1 text-sm text-gray-500">
             Manage your outreach campaigns
           </p>
@@ -85,8 +86,8 @@ export default function CampaignsPage() {
             <Card key={campaign.id}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-purple-100 flex items-center justify-center">
-                    <MegaphoneIcon className="h-5 w-5 text-purple-600" />
+                  <div className="h-10 w-10 rounded-full bg-primary-600 flex items-center justify-center">
+                    <MegaphoneIcon className="h-5 w-5 text-white" />
                   </div>
                   <div>
                     <Link
@@ -115,7 +116,10 @@ export default function CampaignsPage() {
                     <p className="text-lg font-semibold text-green-600">{campaign.replies_received}</p>
                   </div>
 
-                  <StatusBadge status={campaign.status} />
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusBadge status={campaign.status} />
+                    {campaign.status === 'active' && <SendingState sending={campaign.sending} compact />}
+                  </div>
 
                   <div className="flex items-center gap-2">
                     {campaign.status === 'active' ? (
@@ -129,7 +133,7 @@ export default function CampaignsPage() {
                       </Button>
                     ) : campaign.status === 'paused' || campaign.status === 'draft' ? (
                       <Button
-                        variant="success"
+                        variant="primary"
                         size="sm"
                         onClick={() => startMutation.mutate(campaign.id)}
                         loading={startMutation.isPending}

@@ -5,6 +5,7 @@ python-multipart==0.0.6
 
 # Database
 sqlalchemy==2.0.25
+psycopg2-binary>=2.9.10,<3  # Postgres driver (production database on Vercel/Neon)
 alembic==1.13.1
 aiosqlite==0.19.0
 
@@ -19,8 +20,10 @@ openai==1.12.0
 
 # Web Scraping
 httpx==0.26.0
+requests==2.32.5
 beautifulsoup4==4.12.3
 lxml==5.1.0
+playwright==1.60.0  # after installing, also run: playwright install chromium
 
 # Background Tasks
 apscheduler==3.10.4

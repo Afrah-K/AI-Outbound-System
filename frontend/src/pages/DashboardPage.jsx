@@ -13,7 +13,7 @@ function MetricCard({ title, value, subtitle, icon: Icon, color }) {
   const colors = {
     blue: 'bg-blue-500',
     green: 'bg-green-500',
-    purple: 'bg-purple-500',
+    purple: 'bg-primary-500',
     orange: 'bg-orange-500',
   }
 
@@ -55,7 +55,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-3xl font-medium tracking-tight text-gray-900">Dashboard</h1>
         <p className="mt-1 text-sm text-gray-500">
           Overview of your cold email campaigns
         </p>
@@ -109,12 +109,12 @@ export default function DashboardPage() {
             </div>
           </a>
           <a
-            href="/leads"
+            href="/prospects"
             className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
           >
             <EnvelopeIcon className="h-8 w-8 text-primary-600" />
             <div>
-              <p className="font-medium text-gray-900">Import Leads</p>
+              <p className="font-medium text-gray-900">Import Prospects</p>
               <p className="text-sm text-gray-500">Upload CSV from Apollo</p>
             </div>
           </a>
@@ -147,7 +147,7 @@ export default function DashboardPage() {
               </p>
               <ol className="mt-3 list-decimal list-inside text-sm text-primary-700 space-y-1">
                 <li>Connect a Gmail/GSuite inbox</li>
-                <li>Import your leads from Apollo</li>
+                <li>Import your prospects from Apollo</li>
                 <li>Create an email sequence</li>
                 <li>Launch your first campaign</li>
               </ol>

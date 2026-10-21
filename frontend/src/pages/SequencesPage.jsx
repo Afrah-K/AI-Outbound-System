@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { PlusIcon, QueueListIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, QueueListIcon, TrashIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
 import { api } from '../services/apiClient'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
@@ -39,7 +39,7 @@ export default function SequencesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Sequences</h1>
+          <h1 className="text-3xl font-medium tracking-tight text-gray-900">Sequences</h1>
           <p className="mt-1 text-sm text-gray-500">
             Create and manage email sequences
           </p>
@@ -68,8 +68,8 @@ export default function SequencesPage() {
             <Card key={sequence.id}>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                    <QueueListIcon className="h-5 w-5 text-blue-600" />
+                  <div className="h-10 w-10 rounded-full bg-primary-600 flex items-center justify-center">
+                    <QueueListIcon className="h-5 w-5 text-white" />
                   </div>
                   <div>
                     <Link
@@ -83,17 +83,24 @@ export default function SequencesPage() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (confirm('Delete this sequence?')) {
-                      deleteMutation.mutate(sequence.id)
-                    }
-                  }}
-                >
-                  <TrashIcon className="h-4 w-4 text-gray-400 hover:text-red-500" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Link to={`/sequences/${sequence.id}/edit`} title="Edit sequence">
+                    <Button variant="ghost" size="sm">
+                      <PencilSquareIcon className="h-4 w-4 text-gray-400 hover:text-primary-600" />
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm('Delete this sequence?')) {
+                        deleteMutation.mutate(sequence.id)
+                      }
+                    }}
+                  >
+                    <TrashIcon className="h-4 w-4 text-gray-400 hover:text-red-500" />
+                  </Button>
+                </div>
               </div>
               {sequence.description && (
                 <p className="mt-3 text-sm text-gray-500">{sequence.description}</p>

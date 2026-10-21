@@ -1,33 +1,17 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { api } from '../services/apiClient'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
-import LoadingSpinner from '../components/common/LoadingSpinner'
 import toast from 'react-hot-toast'
+import { allTimezones, browserTimezone, windowInLocalTime } from '../utils/time'
 
-const TIMEZONES = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Toronto',
-  'Europe/London',
-  'Europe/Paris',
-  'Europe/Berlin',
-  'Asia/Tokyo',
-  'Asia/Singapore',
-  'Australia/Sydney',
-  'UTC',
-]
 
 export default function CampaignFormPage() {
-  const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const isEditing = Boolean(id) && id !== 'new'
 
   const [formData, setFormData] = useState({
     name: '',
@@ -35,9 +19,11 @@ export default function CampaignFormPage() {
     sequence_id: '',
     send_start_time: '09:00',
     send_end_time: '17:00',
-    timezone: 'America/New_York',
+    timezone: browserTimezone(),
     send_on_weekends: false,
     stop_on_reply: true,
+    min_gap_minutes: 2,
+    max_gap_minutes: 5,
   })
 
   // Fetch sequences for dropdown
@@ -49,44 +35,12 @@ export default function CampaignFormPage() {
     },
   })
 
-  // Fetch existing campaign for editing
-  const { isLoading } = useQuery({
-    queryKey: ['campaign', id],
-    queryFn: async () => {
-      const response = await api.campaigns.get(id)
-      return response.data
-    },
-    enabled: isEditing,
-    onSuccess: (data) => {
-      setFormData({
-        name: data.name || '',
-        description: data.description || '',
-        sequence_id: data.sequence_id || '',
-        send_start_time: data.send_start_time || '09:00',
-        send_end_time: data.send_end_time || '17:00',
-        timezone: data.timezone || 'America/New_York',
-        send_on_weekends: data.send_on_weekends || false,
-        stop_on_reply: data.stop_on_reply !== false,
-      })
-    },
-  })
-
   const createMutation = useMutation({
     mutationFn: (data) => api.campaigns.create(data),
     onSuccess: (response) => {
       queryClient.invalidateQueries(['campaigns'])
       toast.success('Campaign created')
       navigate(`/campaigns/${response.data.id}`)
-    },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: (data) => api.campaigns.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['campaigns'])
-      queryClient.invalidateQueries(['campaign', id])
-      toast.success('Campaign updated')
-      navigate(`/campaigns/${id}`)
     },
   })
 
@@ -116,24 +70,19 @@ export default function CampaignFormPage() {
       name: formData.name.trim(),
       description: formData.description.trim(),
       sequence_id: parseInt(formData.sequence_id),
+      min_gap_minutes: parseInt(formData.min_gap_minutes, 10) || 0,
+      max_gap_minutes: parseInt(formData.max_gap_minutes, 10) || 0,
     }
 
-    if (isEditing) {
-      updateMutation.mutate(data)
-    } else {
-      createMutation.mutate(data)
+    if (data.min_gap_minutes > data.max_gap_minutes) {
+      toast.error('The minimum pause can\'t be longer than the maximum')
+      return
     }
+
+    createMutation.mutate(data)
   }
 
-  if (isEditing && isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
-      </div>
-    )
-  }
-
-  const isSaving = createMutation.isLoading || updateMutation.isLoading
+  const isSaving = createMutation.isPending
   const sequences = sequencesData?.sequences || []
 
   return (
@@ -143,13 +92,11 @@ export default function CampaignFormPage() {
           <ArrowLeftIcon className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isEditing ? 'Edit Campaign' : 'New Campaign'}
+          <h1 className="text-3xl font-medium tracking-tight text-gray-900">
+            New Campaign
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            {isEditing
-              ? 'Update your campaign settings'
-              : 'Create a new email campaign'}
+            Create a new email campaign - you'll add recipients and inboxes on the next page
           </p>
         </div>
       </div>
@@ -170,7 +117,7 @@ export default function CampaignFormPage() {
                 value={formData.name}
                 onChange={handleChange}
                 placeholder="e.g., Q1 2024 - SaaS Outreach"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 required
               />
             </div>
@@ -185,7 +132,7 @@ export default function CampaignFormPage() {
                 onChange={handleChange}
                 placeholder="Describe what this campaign is for..."
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
 
@@ -197,7 +144,7 @@ export default function CampaignFormPage() {
                 name="sequence_id"
                 value={formData.sequence_id}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 required
               >
                 <option value="">Select a sequence...</option>
@@ -237,7 +184,7 @@ export default function CampaignFormPage() {
                   name="send_start_time"
                   value={formData.send_start_time}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
               </div>
               <div>
@@ -249,7 +196,7 @@ export default function CampaignFormPage() {
                   name="send_end_time"
                   value={formData.send_end_time}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
               </div>
             </div>
@@ -262,14 +209,52 @@ export default function CampaignFormPage() {
                 name="timezone"
                 value={formData.timezone}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               >
-                {TIMEZONES.map((tz) => (
+                {allTimezones([formData.timezone]).map((tz) => (
                   <option key={tz} value={tz}>
-                    {tz}
+                    {tz.replaceAll('_', ' ')}
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Emails only go out between the start and end time in this time zone
+                {windowInLocalTime(formData.send_start_time, formData.send_end_time, formData.timezone)
+                  ? ` (${windowInLocalTime(formData.send_start_time, formData.send_end_time, formData.timezone)})`
+                  : ''}
+                .
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Pause between emails
+              </label>
+              <div className="flex items-center gap-2 text-sm">
+                <input
+                  type="number"
+                  name="min_gap_minutes"
+                  min={0}
+                  max={240}
+                  value={formData.min_gap_minutes}
+                  onChange={handleChange}
+                  className="w-24 px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                <span className="text-gray-500">to</span>
+                <input
+                  type="number"
+                  name="max_gap_minutes"
+                  min={0}
+                  max={240}
+                  value={formData.max_gap_minutes}
+                  onChange={handleChange}
+                  className="w-24 px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                <span className="text-gray-500">minutes</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Emails go out one at a time with a random break in this range between them. Set both to 0 for no pause.
+              </p>
             </div>
 
             <div className="space-y-3 pt-2">
@@ -316,7 +301,7 @@ export default function CampaignFormPage() {
             Cancel
           </Button>
           <Button type="submit" loading={isSaving}>
-            {isEditing ? 'Save Changes' : 'Create Campaign'}
+            Create Campaign
           </Button>
         </div>
       </form>

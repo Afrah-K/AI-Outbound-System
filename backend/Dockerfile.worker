@@ -1,0 +1,23 @@
+# The background worker (app/worker.py) - campaign sending, warmup, reply agent,
+# placement checks and queued jobs. Runs as a Vercel Daemon (see /vercel.json);
+# the API itself runs as a serverless service.
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    BACKGROUND_WORKER=external
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    # Chromium for the Clutch scraper, plus a virtual display: Clutch's bot check
+    # only passes a real (non-headless) browser window
+    && playwright install --with-deps chromium \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends xvfb xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+CMD ["xvfb-run", "-a", "python", "-m", "app.worker"]

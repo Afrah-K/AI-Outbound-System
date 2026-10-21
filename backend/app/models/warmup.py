@@ -9,6 +9,7 @@ class WarmupConfig(Base):
     __tablename__ = "warmup_configs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
 
     # Stage configurations
     stage_1_daily_limit = Column(Integer, default=5)
@@ -34,7 +35,8 @@ class WarmupLog(Base):
     __tablename__ = "warmup_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    inbox_id = Column(Integer, ForeignKey("inboxes.id"), index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
+    inbox_id = Column(Integer, ForeignKey("inboxes.id", ondelete="SET NULL"), index=True)
 
     # Warmup email details
     sent_to = Column(String(255))         # Target email

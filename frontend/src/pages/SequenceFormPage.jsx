@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -25,28 +25,32 @@ export default function SequenceFormPage() {
   const [steps, setSteps] = useState([])
 
   // Fetch existing sequence for editing
-  const { isLoading } = useQuery({
+  const { data: sequence, isLoading } = useQuery({
     queryKey: ['sequence', id],
     queryFn: async () => {
       const response = await api.sequences.get(id)
       return response.data
     },
     enabled: isEditing,
-    onSuccess: (data) => {
-      setName(data.name || '')
-      setDescription(data.description || '')
-      setSteps(
-        data.steps?.map((s) => ({
-          id: s.id,
-          subject: s.subject || '',
-          body: s.body || '',
-          delay_days: s.delay_days || 0,
-          delay_hours: s.delay_hours || 0,
-          use_gpt: s.use_gpt || false,
-        })) || []
-      )
-    },
   })
+
+  // React Query v5 dropped useQuery's onSuccess, so prefill the form once the sequence loads.
+  useEffect(() => {
+    if (!sequence) return
+    setName(sequence.name || '')
+    setDescription(sequence.description || '')
+    setSteps(
+      sequence.steps?.map((s) => ({
+        id: s.id,
+        subject: s.subject || '',
+        body: s.body || '',
+        delay_days: s.delay_days || 0,
+        delay_hours: s.delay_hours || 0,
+        use_gpt: s.use_gpt || false,
+        gpt_prompt: s.gpt_prompt || null,
+      })) || []
+    )
+  }, [sequence])
 
   const createMutation = useMutation({
     mutationFn: (data) => api.sequences.create(data),
@@ -117,12 +121,15 @@ export default function SequenceFormPage() {
       name: name.trim(),
       description: description.trim(),
       steps: steps.map((step, index) => ({
+        // Existing steps send their id so the backend updates them in place (keeps send history attached).
+        id: typeof step.id === 'number' ? step.id : undefined,
         order: index + 1,
         subject: step.subject,
         body: step.body,
         delay_days: parseInt(step.delay_days) || 0,
         delay_hours: parseInt(step.delay_hours) || 0,
         use_gpt: step.use_gpt,
+        gpt_prompt: step.gpt_prompt || null,
       })),
     }
 
@@ -141,7 +148,7 @@ export default function SequenceFormPage() {
     )
   }
 
-  const isSaving = createMutation.isLoading || updateMutation.isLoading
+  const isSaving = createMutation.isPending || updateMutation.isPending
 
   return (
     <div className="space-y-6">
@@ -150,7 +157,7 @@ export default function SequenceFormPage() {
           <ArrowLeftIcon className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-3xl font-medium tracking-tight text-gray-900">
             {isEditing ? 'Edit Sequence' : 'New Sequence'}
           </h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -176,7 +183,7 @@ export default function SequenceFormPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Cold Outreach - SaaS Founders"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 required
               />
             </div>
@@ -189,7 +196,7 @@ export default function SequenceFormPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe what this sequence is for..."
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
           </div>
@@ -303,7 +310,7 @@ export default function SequenceFormPage() {
                           updateStep(index, 'subject', e.target.value)
                         }
                         placeholder="e.g., Quick question about {{company}}"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                       />
                       <p className="mt-1 text-xs text-gray-500">
                         Use {'{{first_name}}'}, {'{{company}}'}, {'{{title}}'} for
@@ -322,7 +329,7 @@ export default function SequenceFormPage() {
                         }
                         placeholder="Write your email content..."
                         rows={6}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
                       />
                     </div>
 

@@ -10,9 +10,11 @@ export default function EmptyState({
   return (
     <div className={clsx('text-center py-12', className)}>
       {Icon && (
-        <Icon className="mx-auto h-12 w-12 text-gray-400" />
+        <div className="mx-auto h-14 w-14 rounded-full bg-primary-50 flex items-center justify-center">
+          <Icon className="h-7 w-7 text-primary-600" />
+        </div>
       )}
-      <h3 className="mt-4 text-lg font-medium text-gray-900">{title}</h3>
+      <h3 className="mt-4 text-lg font-medium tracking-tight text-gray-900">{title}</h3>
       {description && (
         <p className="mt-2 text-sm text-gray-500">{description}</p>
       )}

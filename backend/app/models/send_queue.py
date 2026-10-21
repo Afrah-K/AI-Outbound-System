@@ -17,13 +17,14 @@ class SendQueue(Base):
     __tablename__ = "send_queue"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
 
     # Associations
-    inbox_id = Column(Integer, ForeignKey("inboxes.id"), index=True)
+    inbox_id = Column(Integer, ForeignKey("inboxes.id", ondelete="SET NULL"), index=True)
     person_id = Column(Integer, ForeignKey("people.id"), index=True)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), index=True)
-    campaign_lead_id = Column(Integer, ForeignKey("campaign_leads.id"))
-    sequence_step_id = Column(Integer, ForeignKey("sequence_steps.id"))
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), index=True)
+    campaign_lead_id = Column(Integer, ForeignKey("campaign_leads.id", ondelete="SET NULL"))
+    sequence_step_id = Column(Integer, ForeignKey("sequence_steps.id", ondelete="SET NULL"))
 
     # Scheduling
     scheduled_for = Column(DateTime, nullable=False, index=True)

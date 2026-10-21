@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -18,9 +18,12 @@ class LeadStatus(enum.Enum):
 
 class Person(Base):
     __tablename__ = "people"
+    # Unique per account - two workspaces can both have the same prospect
+    __table_args__ = (UniqueConstraint("owner_id", "email", name="uq_people_owner_email"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True)  # the account this belongs to
+    email = Column(String(255), nullable=False, index=True)
     first_name = Column(String(100))
     last_name = Column(String(100))
     full_name = Column(String(255))

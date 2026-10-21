@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { PlusIcon, TrashIcon, InboxIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, TrashIcon, InboxIcon, PaperAirplaneIcon, SignalIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { api } from '../services/apiClient'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
@@ -32,6 +33,8 @@ function HealthScore({ score }) {
 
 export default function InboxesPage() {
   const queryClient = useQueryClient()
+  const [sendModalInbox, setSendModalInbox] = useState(null)
+  const [testRecipient, setTestRecipient] = useState('')
 
   const { data, isLoading } = useQuery({
     queryKey: ['inboxes'],
@@ -49,6 +52,32 @@ export default function InboxesPage() {
     },
   })
 
+  const testMutation = useMutation({
+    mutationFn: (id) => api.inboxes.test(id),
+    onSuccess: (response) => {
+      if (response.data.success) {
+        toast.success(`Connected - ${response.data.email} (${response.data.messages_total} messages)`)
+      } else {
+        toast.error(response.data.error || 'Connection test failed')
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Connection test failed')
+    },
+  })
+
+  const sendTestMutation = useMutation({
+    mutationFn: ({ id, to }) => api.inboxes.sendTest(id, to),
+    onSuccess: () => {
+      toast.success(`Test email sent to ${testRecipient}`)
+      setSendModalInbox(null)
+      setTestRecipient('')
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.detail || 'Failed to send test email')
+    },
+  })
+
   const handleAddInbox = async () => {
     try {
       const response = await api.inboxes.initiateOAuth()
@@ -60,6 +89,14 @@ export default function InboxesPage() {
     } catch (error) {
       toast.error('Failed to initiate OAuth')
     }
+  }
+
+  const handleSendTest = () => {
+    if (!testRecipient.trim()) {
+      toast.error('Enter a recipient email address')
+      return
+    }
+    sendTestMutation.mutate({ id: sendModalInbox.id, to: testRecipient.trim() })
   }
 
   if (isLoading) {
@@ -74,7 +111,7 @@ export default function InboxesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Inboxes</h1>
+          <h1 className="text-3xl font-medium tracking-tight text-gray-900">Inboxes</h1>
           <p className="mt-1 text-sm text-gray-500">
             Manage your connected Gmail accounts
           </p>
@@ -101,10 +138,10 @@ export default function InboxesPage() {
         <div className="grid gap-4">
           {data?.inboxes?.map((inbox) => (
             <Card key={inbox.id}>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
-                    <InboxIcon className="h-5 w-5 text-primary-600" />
+                  <div className="h-10 w-10 rounded-full bg-primary-600 flex items-center justify-center">
+                    <InboxIcon className="h-5 w-5 text-white" />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">{inbox.email_address}</p>
@@ -139,6 +176,25 @@ export default function InboxesPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    icon={SignalIcon}
+                    onClick={() => testMutation.mutate(inbox.id)}
+                    loading={testMutation.isLoading && testMutation.variables === inbox.id}
+                  >
+                    Test
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={PaperAirplaneIcon}
+                    onClick={() => setSendModalInbox(inbox)}
+                  >
+                    Send test email
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => {
                       if (confirm('Delete this inbox?')) {
                         deleteMutation.mutate(inbox.id)
@@ -151,6 +207,62 @@ export default function InboxesPage() {
               </div>
             </Card>
           ))}
+        </div>
+      )}
+
+      {sendModalInbox && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75"
+              onClick={() => setSendModalInbox(null)}
+            />
+            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Send test email</h3>
+                <button
+                  onClick={() => setSendModalInbox(null)}
+                  className="text-gray-400 hover:text-gray-500"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-600 mb-4">
+                Sends a real email from <strong>{sendModalInbox.email_address}</strong> via Gmail,
+                to confirm this inbox can actually send.
+              </p>
+
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Recipient
+              </label>
+              <input
+                type="email"
+                value={testRecipient}
+                onChange={(e) => setTestRecipient(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
+                autoFocus
+              />
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setSendModalInbox(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={handleSendTest}
+                  loading={sendTestMutation.isLoading}
+                >
+                  Send
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

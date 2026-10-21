@@ -20,8 +20,41 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: Optional[str] = None
 
+    # Google Places API (New) key for the Google Maps scraper - can also be
+    # saved from the Scrapers page instead
+    google_maps_api_key: Optional[str] = None
+
+    # Where the frontend runs - used for links in the reply agent's email alerts
+    app_base_url: str = "http://localhost:5173"
+
     # Security
     secret_key: str = "change-me-in-production"
+
+    # Accounts & sign-in
+    # Data from before accounts existed is given to this account on startup
+    initial_owner_email: Optional[str] = None
+    session_days: int = 30
+    session_cookie_name: str = "outbound_session"
+    # True when served over HTTPS (deployed) - the cookie is then only sent over HTTPS
+    session_cookie_secure: bool = False
+    # Google sign-in reuses GOOGLE_CLIENT_ID/SECRET; add this URL to the OAuth client's
+    # "Authorized redirect URIs" in Google Cloud Console
+    google_login_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    # Comma-separated origins allowed to call the API with cookies (the frontend URL(s))
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    # Where the schedulers and background jobs run: "in_process" (inside the API -
+    # local/single server), "external" (a separate `python -m app.worker`, e.g. the
+    # Vercel Daemon), or "auto" = external on Vercel, in_process anywhere else
+    background_worker: str = "auto"
+
+    @property
+    def worker_mode(self) -> str:
+        import os
+
+        if self.background_worker in ("in_process", "external"):
+            return self.background_worker
+        return "external" if os.environ.get("VERCEL") else "in_process"
 
     # Sending Configuration
     default_daily_limit: int = 20

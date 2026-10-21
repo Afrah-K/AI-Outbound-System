@@ -5,6 +5,7 @@ import Card from '../components/common/Card'
 import StatusBadge from '../components/common/StatusBadge'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
+import PlacementSection from '../components/analytics/PlacementSection'
 
 function WarmupProgress({ stage }) {
   const stages = ['not_started', 'stage_1', 'stage_2', 'stage_3', 'completed']
@@ -19,7 +20,7 @@ function WarmupProgress({ stage }) {
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2">
         <div
-          className="bg-orange-500 h-2 rounded-full transition-all"
+          className="bg-primary-600 h-2 rounded-full transition-all"
           style={{ width: `${percentage}%` }}
         />
       </div>
@@ -53,23 +54,23 @@ export default function WarmupPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Inbox Warmup</h1>
+        <h1 className="text-3xl font-medium tracking-tight text-gray-900">Inbox Warmup</h1>
         <p className="mt-1 text-sm text-gray-500">
           Gradually increase sending volume to build sender reputation
         </p>
       </div>
 
       {/* Info Card */}
-      <Card className="bg-orange-50 border-orange-200">
+      <Card className="bg-primary-50 border border-primary-100">
         <div className="flex items-start gap-4">
-          <FireIcon className="h-8 w-8 text-orange-600 flex-shrink-0" />
+          <FireIcon className="h-8 w-8 text-primary-600 flex-shrink-0" />
           <div>
-            <h3 className="font-medium text-orange-900">How Warmup Works</h3>
-            <p className="mt-1 text-sm text-orange-700">
+            <h3 className="font-medium text-primary-900">How Warmup Works</h3>
+            <p className="mt-1 text-sm text-primary-700">
               New inboxes start with a low sending volume (5 emails/day) and gradually increase
               over 3 weeks. This helps build sender reputation and avoid spam filters.
             </p>
-            <ul className="mt-2 text-sm text-orange-700 list-disc list-inside space-y-1">
+            <ul className="mt-2 text-sm text-primary-700 list-disc list-inside space-y-1">
               <li>Stage 1: 5 emails/day for 7 days</li>
               <li>Stage 2: 10 emails/day for 7 days</li>
               <li>Stage 3: 20 emails/day for 7 days</li>
@@ -92,8 +93,8 @@ export default function WarmupPage() {
             <Card key={inbox.id}>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center">
-                    <FireIcon className="h-5 w-5 text-orange-600" />
+                  <div className="h-10 w-10 rounded-full bg-primary-600 flex items-center justify-center">
+                    <FireIcon className="h-5 w-5 text-white" />
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">{inbox.email_address}</p>
@@ -117,6 +118,9 @@ export default function WarmupPage() {
           ))}
         </div>
       )}
+
+      {/* Where the warmup emails land - the result warmup is working toward */}
+      <PlacementSection />
     </div>
   )
 }
