@@ -45,7 +45,7 @@ from app.services.unibox import (
     collect_lead_replies,
     connected_inboxes,
     draft_payload,
-    gmail_for,
+    mail_for,
     latest_draft,
     person_payload,
     send_thread_reply,
@@ -60,8 +60,8 @@ def _connected_inbox_or_error(db: Session, inbox_id: int) -> Inbox:
     inbox = db.query(Inbox).filter(Inbox.id == inbox_id).first()
     if not inbox:
         raise HTTPException(status_code=404, detail="Inbox not found")
-    if not inbox.access_token or not inbox.refresh_token:
-        raise HTTPException(status_code=400, detail="Inbox is not connected to Gmail")
+    if not inbox.has_credentials:
+        raise HTTPException(status_code=400, detail="Inbox is not connected")
     return inbox
 
 
@@ -70,18 +70,18 @@ async def list_unibox_messages(
     per_inbox: int = Query(15, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
-    """Merge the most recent inbox messages across every connected Gmail account into one feed."""
+    """Merge the most recent inbox messages across every connected inbox into one feed."""
     messages = []
     inbox_errors = []
 
     for inbox in connected_inboxes(db):
-        if not inbox.access_token or not inbox.refresh_token:
+        if not inbox.has_credentials:
             inbox_errors.append({"inbox_id": inbox.id, "email": inbox.email_address, "error": "Not connected"})
             continue
         try:
-            gmail = gmail_for(inbox)
-            inbox_messages = gmail.list_messages(max_results=per_inbox, label_ids=["INBOX"])
-            sync_tokens(inbox, gmail, db)
+            mail = mail_for(inbox)
+            inbox_messages = mail.list_messages(max_results=per_inbox, label_ids=["INBOX"])
+            sync_tokens(inbox, mail, db)
             for m in inbox_messages:
                 m["inbox_id"] = inbox.id
                 m["inbox_email"] = inbox.email_address
@@ -234,9 +234,9 @@ async def get_unibox_thread(inbox_id: int, thread_id: str, db: Session = Depends
     inbox = _connected_inbox_or_error(db, inbox_id)
 
     try:
-        gmail = gmail_for(inbox)
-        thread_messages = await asyncio.to_thread(gmail.get_thread, thread_id)
-        sync_tokens(inbox, gmail, db)
+        mail = mail_for(inbox)
+        thread_messages = await asyncio.to_thread(mail.get_thread, thread_id)
+        sync_tokens(inbox, mail, db)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load thread: {exc}")
 

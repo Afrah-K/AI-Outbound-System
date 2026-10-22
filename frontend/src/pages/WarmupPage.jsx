@@ -84,7 +84,7 @@ export default function WarmupPage() {
           <EmptyState
             icon={FireIcon}
             title="No inboxes to warm up"
-            description="Connect a Gmail account first to start the warmup process"
+            description="Connect an inbox first to start the warmup process"
           />
         </Card>
       ) : (

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
 
     # Security
     secret_key: str = "change-me-in-production"
+    # Encrypts the passwords of SMTP/IMAP inboxes stored in the database. A Fernet
+    # key (python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    # or any random string of 32+ characters. Only needed once an SMTP/IMAP inbox
+    # is connected; changing it means re-entering those inboxes' passwords.
+    mail_credentials_key: Optional[str] = None
 
     # Accounts & sign-in
     # Data from before accounts existed is given to this account on startup

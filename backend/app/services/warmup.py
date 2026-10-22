@@ -16,7 +16,7 @@ from typing import Optional
 import structlog
 from sqlalchemy.orm import Session
 
-from app.integrations.gmail import GmailService
+from app.integrations.mail import MailProvider, provider_for, sync_tokens
 from app.models import Inbox, WarmupConfig, WarmupLog, WarmupStage
 from app.services.placement import record_send
 
@@ -131,7 +131,7 @@ def _pick_partner(db: Session, inbox: Inbox, candidates: list, config: WarmupCon
     already at their own daily quota, since replying counts as a real
     send from their mailbox too and shouldn't push them past their cap.
     """
-    others = [c for c in candidates if c.id != inbox.id and c.access_token and c.refresh_token]
+    others = [c for c in candidates if c.id != inbox.id and c.has_credentials]
 
     def under_own_quota(c: Inbox) -> bool:
         if c.warmup_stage not in STAGE_LIMIT_FIELD:
@@ -144,11 +144,8 @@ def _pick_partner(db: Session, inbox: Inbox, candidates: list, config: WarmupCon
     return min(others, key=lambda c: c.warmup_emails_sent)
 
 
-def _sync_tokens(db: Session, inbox: Inbox, gmail: GmailService) -> None:
-    updated = gmail.updated_tokens
-    if updated["access_token"] != inbox.access_token:
-        inbox.access_token = updated["access_token"]
-        inbox.token_expiry = updated["token_expiry"]
+def _sync_tokens(db: Session, inbox: Inbox, mail: MailProvider) -> None:
+    if sync_tokens(inbox, mail):
         db.commit()
 
 
@@ -156,15 +153,11 @@ async def _send_and_log(db: Session, sender: Inbox, recipient: Inbox) -> bool:
     """Send one warmup email sender -> recipient, then have recipient reply back. Returns True if the initial send succeeded."""
     subject, body = random.choice(WARMUP_TEMPLATES)
     try:
-        gmail = GmailService(
-            access_token=sender.access_token,
-            refresh_token=sender.refresh_token,
-            token_expiry=sender.token_expiry,
-        )
+        mail = provider_for(sender)
         sent = await asyncio.to_thread(
-            gmail.send_email, to=recipient.email_address, subject=subject, body=body, from_name=sender.display_name
+            mail.send_email, to=recipient.email_address, subject=subject, body=body, from_name=sender.display_name
         )
-        _sync_tokens(db, sender, gmail)
+        _sync_tokens(db, sender, mail)
     except Exception as exc:
         logger.warning("warmup.send_failed", sender=sender.email_address, error=str(exc))
         return False
@@ -180,13 +173,9 @@ async def _send_and_log(db: Session, sender: Inbox, recipient: Inbox) -> bool:
     # Not gated by the recipient's own daily quota - a reply is a response, not
     # a scheduled send, same as how a human would actually use their inbox.
     try:
-        reply_gmail = GmailService(
-            access_token=recipient.access_token,
-            refresh_token=recipient.refresh_token,
-            token_expiry=recipient.token_expiry,
-        )
+        reply_mail = provider_for(recipient)
         reply = await asyncio.to_thread(
-            reply_gmail.send_email,
+            reply_mail.send_email,
             to=sender.email_address,
             subject=f"Re: {subject}",
             body=random.choice(REPLY_TEMPLATES),
@@ -196,7 +185,7 @@ async def _send_and_log(db: Session, sender: Inbox, recipient: Inbox) -> bool:
             # account 404s ("Requested entity was not found"). A plain "Re:" send
             # still threads correctly in each mailbox via subject/References matching.
         )
-        _sync_tokens(db, recipient, reply_gmail)
+        _sync_tokens(db, recipient, reply_mail)
         recipient.warmup_emails_sent = (recipient.warmup_emails_sent or 0) + 1
         recipient.emails_sent_today = (recipient.emails_sent_today or 0) + 1
         recipient.reply_count_7d = (recipient.reply_count_7d or 0) + 1
@@ -248,7 +237,7 @@ async def run_warmup_cycle(db: Session) -> dict:
 
             if inbox.warmup_stage == WarmupStage.COMPLETED:
                 continue
-            if not inbox.access_token or not inbox.refresh_token:
+            if not inbox.has_credentials:
                 continue
 
             daily_quota = getattr(config, STAGE_LIMIT_FIELD[inbox.warmup_stage])
@@ -290,7 +279,7 @@ def get_status(db: Session) -> list:
             "is_warmup_paused": inbox.is_warmup_paused,
             "pause_reason": inbox.pause_reason,
             "has_partner": any(
-                i.id != inbox.id and i.access_token and i.refresh_token for i in inboxes
+                i.id != inbox.id and i.has_credentials for i in inboxes
             ),
         })
     return status

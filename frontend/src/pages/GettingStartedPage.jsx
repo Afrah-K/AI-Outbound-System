@@ -27,8 +27,8 @@ export default function GettingStartedPage() {
 
   const steps = [
     {
-      title: 'Connect your Gmail',
-      text: 'Go to Inboxes and click Add Inbox to sign in with Google. Add two inboxes if you can - they send each other friendly emails every day ("warmup") so your real emails don\'t end up in spam.',
+      title: 'Connect your inbox',
+      text: 'Go to Inboxes and click Connect Gmail to sign in with Google - or Connect SMTP/IMAP inbox for any other mail provider. Add two inboxes if you can - they send each other friendly emails every day ("warmup") so your real emails don\'t end up in spam.',
       done: counts.active_inboxes > 0,
       progress: counts.active_inboxes ? `${counts.active_inboxes} connected` : null,
       to: '/inboxes',

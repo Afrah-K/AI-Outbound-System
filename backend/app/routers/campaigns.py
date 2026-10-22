@@ -243,7 +243,7 @@ async def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
                 "email_address": ci.inbox.email_address,
                 "display_name": ci.inbox.display_name,
                 "is_active": ci.inbox.is_active,
-                "connected": bool(ci.inbox.access_token and ci.inbox.refresh_token),
+                "connected": ci.inbox.has_credentials,
                 "daily_limit": ci.inbox.daily_limit,
                 "emails_sent_today": ci.inbox.emails_sent_today,
             }

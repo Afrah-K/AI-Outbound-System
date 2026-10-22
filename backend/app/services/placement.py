@@ -7,7 +7,9 @@ mail sent between your own connected inboxes (the standard "seed inbox"
 method): every warmup email is checked automatically, and a placement test
 sends a campaign's real first email to your inboxes. A minute or so after
 sending, the message is looked up in the recipient mailbox by its
-Message-ID and its Gmail labels say where it landed.
+Message-ID and its Gmail labels say where it landed. For an SMTP/IMAP
+recipient inbox, the folder it's in does: INBOX, the Junk folder (spam), or
+another folder (other) - plain IMAP has no Gmail-style tabs.
 
 Caveat worth showing users: this reflects how Gmail treats your mail to
 these particular inboxes - a strong signal for your sending reputation and
@@ -21,7 +23,7 @@ from typing import Optional
 import structlog
 from sqlalchemy.orm import Session
 
-from app.integrations.gmail.service import GmailService
+from app.integrations.mail import MailProvider, provider_for, sync_tokens
 from app.models import Campaign, CampaignInbox, CampaignLead, Inbox, Person, PlacementCheck, SequenceStep
 
 logger = structlog.get_logger()
@@ -58,15 +60,8 @@ def classify(labels: list) -> str:
     return "other"  # archived by a filter, trashed, ...
 
 
-def _gmail(inbox: Inbox) -> GmailService:
-    return GmailService(access_token=inbox.access_token, refresh_token=inbox.refresh_token, token_expiry=inbox.token_expiry)
-
-
-def _sync_tokens(db: Session, inbox: Inbox, gmail: GmailService) -> None:
-    updated = gmail.updated_tokens
-    if updated["access_token"] != inbox.access_token:
-        inbox.access_token = updated["access_token"]
-        inbox.token_expiry = updated["token_expiry"]
+def _sync_tokens(db: Session, inbox: Inbox, mail: MailProvider) -> None:
+    sync_tokens(inbox, mail)
 
 
 def record_send(
@@ -108,19 +103,19 @@ async def resolve_pending(db: Session) -> dict:
         check.attempts = (check.attempts or 0) + 1
         sender, recipient = inboxes.get(check.sender_inbox_id), inboxes.get(check.recipient_inbox_id)
         try:
-            if not sender or not recipient or not recipient.access_token:
+            if not sender or not recipient or not recipient.has_credentials:
                 raise Exception("Inbox no longer connected")
 
             if not check.rfc822_message_id:
-                sender_gmail = _gmail(sender)
-                check.rfc822_message_id = await asyncio.to_thread(sender_gmail.get_rfc822_message_id, check.sender_message_id)
-                _sync_tokens(db, sender, sender_gmail)
+                sender_mail = provider_for(sender)
+                check.rfc822_message_id = await asyncio.to_thread(sender_mail.get_rfc822_message_id, check.sender_message_id)
+                _sync_tokens(db, sender, sender_mail)
                 if not check.rfc822_message_id:
                     raise Exception("Sent message has no Message-ID header")
 
-            recipient_gmail = _gmail(recipient)
-            labels = await asyncio.to_thread(recipient_gmail.find_labels_by_rfc822_id, check.rfc822_message_id)
-            _sync_tokens(db, recipient, recipient_gmail)
+            recipient_mail = provider_for(recipient)
+            labels = await asyncio.to_thread(recipient_mail.find_labels_by_rfc822_id, check.rfc822_message_id)
+            _sync_tokens(db, recipient, recipient_mail)
 
             if labels is not None:
                 check.placement = classify(labels)
@@ -143,7 +138,7 @@ async def resolve_pending(db: Session) -> dict:
 
 
 def _connected(inboxes: list) -> list:
-    return [i for i in inboxes if i.is_active and i.access_token and i.refresh_token]
+    return [i for i in inboxes if i.is_connected]
 
 
 def _test_copy(db: Session, campaign: Optional[Campaign], sender: Inbox) -> tuple:
@@ -201,11 +196,11 @@ async def run_placement_test(db: Session, campaign_id: Optional[int] = None) -> 
     for sender, recipient in pairs:
         subject, body = _test_copy(db, campaign, sender)
         try:
-            gmail = _gmail(sender)
+            mail = provider_for(sender)
             result = await asyncio.to_thread(
-                gmail.send_email, to=recipient.email_address, subject=subject, body=body, from_name=sender.display_name
+                mail.send_email, to=recipient.email_address, subject=subject, body=body, from_name=sender.display_name
             )
-            _sync_tokens(db, sender, gmail)
+            _sync_tokens(db, sender, mail)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{sender.email_address} -> {recipient.email_address}: {exc}")
             continue

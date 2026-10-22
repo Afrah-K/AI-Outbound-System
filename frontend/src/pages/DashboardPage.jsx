@@ -125,7 +125,7 @@ export default function DashboardPage() {
             <InboxIcon className="h-8 w-8 text-primary-600" />
             <div>
               <p className="font-medium text-gray-900">Add Inbox</p>
-              <p className="text-sm text-gray-500">Connect a Gmail account</p>
+              <p className="text-sm text-gray-500">Connect Gmail or any SMTP/IMAP inbox</p>
             </div>
           </a>
         </div>
@@ -146,7 +146,7 @@ export default function DashboardPage() {
                 Welcome to your cold email platform! To get started, you'll need to:
               </p>
               <ol className="mt-3 list-decimal list-inside text-sm text-primary-700 space-y-1">
-                <li>Connect a Gmail/GSuite inbox</li>
+                <li>Connect an inbox (Gmail or any SMTP/IMAP account)</li>
                 <li>Import your prospects from Apollo</li>
                 <li>Create an email sequence</li>
                 <li>Launch your first campaign</li>

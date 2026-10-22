@@ -27,6 +27,8 @@ services:
         value: "false"
       - key: SECRET_KEY
         generateValue: true
+      - key: MAIL_CREDENTIALS_KEY   # encrypts SMTP/IMAP inbox passwords - keep it once inboxes are connected
+        generateValue: true
       # Set these in the Render dashboard when the Blueprint asks (see DEPLOY.md)
       - key: DATABASE_URL          # Neon pooled connection string
         sync: false
