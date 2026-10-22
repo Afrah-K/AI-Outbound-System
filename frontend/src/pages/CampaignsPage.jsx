@@ -21,16 +21,17 @@ export default function CampaignsPage() {
     },
   })
 
+  // A paused campaign is resumed (picks up where it left off); a draft is started
   const startMutation = useMutation({
-    mutationFn: (id) => api.campaigns.start(id),
-    onSuccess: () => {
+    mutationFn: (campaign) => (campaign.status === 'paused' ? api.campaigns.resume(campaign.id) : api.campaigns.start(campaign.id)),
+    onSuccess: (_, campaign) => {
       queryClient.invalidateQueries(['campaigns'])
-      toast.success('Campaign started')
+      toast.success(campaign.status === 'paused' ? 'Campaign resumed' : 'Campaign started')
     },
   })
 
   const pauseMutation = useMutation({
-    mutationFn: (id) => api.campaigns.pause(id),
+    mutationFn: (campaign) => api.campaigns.pause(campaign.id),
     onSuccess: () => {
       queryClient.invalidateQueries(['campaigns'])
       toast.success('Campaign paused')
@@ -126,8 +127,10 @@ export default function CampaignsPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => pauseMutation.mutate(campaign.id)}
-                        loading={pauseMutation.isPending}
+                        onClick={() => pauseMutation.mutate(campaign)}
+                        loading={pauseMutation.isPending && pauseMutation.variables?.id === campaign.id}
+                        title="Pause"
+                        aria-label={`Pause ${campaign.name}`}
                       >
                         <PauseIcon className="h-4 w-4" />
                       </Button>
@@ -135,10 +138,12 @@ export default function CampaignsPage() {
                       <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => startMutation.mutate(campaign.id)}
-                        loading={startMutation.isPending}
+                        onClick={() => startMutation.mutate(campaign)}
+                        loading={startMutation.isPending && startMutation.variables?.id === campaign.id}
+                        icon={PlayIcon}
+                        aria-label={`${campaign.status === 'paused' ? 'Resume' : 'Start'} ${campaign.name}`}
                       >
-                        <PlayIcon className="h-4 w-4" />
+                        {campaign.status === 'paused' ? 'Resume' : 'Start'}
                       </Button>
                     ) : null}
                     <Button
