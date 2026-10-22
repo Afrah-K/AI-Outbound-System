@@ -343,7 +343,8 @@ export default function PlacementSection() {
           <p className="flex gap-2 text-xs text-gray-500">
             <InformationCircleIcon className="h-4 w-4 shrink-0" />
             Measured on emails sent between your own connected inboxes (you can't see inside a prospect's mailbox), so it
-            reflects how Gmail treats your sending inboxes and copy - a strong signal, not a guarantee for every recipient.
+            reflects how those inboxes' providers treat your sending inboxes and copy - a strong signal, not a guarantee for every
+            recipient. Gmail tabs are only measured on Gmail inboxes; SMTP/IMAP inboxes report inbox, spam or another folder.
           </p>
         </div>
       )}

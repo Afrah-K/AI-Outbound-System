@@ -51,8 +51,8 @@ apiClient.interceptors.response.use(
 
     const message = formatErrorDetail(error.response?.data?.detail) || error.message || 'An error occurred'
 
-    // Show error toast for non-404 errors
-    if (status !== 404) {
+    // Show error toast for non-404 errors (unless the caller shows the error itself)
+    if (status !== 404 && !error.config?.skipErrorToast) {
       toast.error(message)
     }
 
@@ -78,6 +78,9 @@ export const api = {
     get: (id) => apiClient.get(`/api/v1/inboxes/${id}`),
     delete: (id) => apiClient.delete(`/api/v1/inboxes/${id}`),
     initiateOAuth: () => apiClient.get('/api/v1/inboxes/oauth/initiate'),
+    // SMTP/IMAP inboxes - the form shows login errors itself (which server failed and why)
+    connectSmtp: (data) => apiClient.post('/api/v1/inboxes/smtp', data, { skipErrorToast: true }),
+    updateSmtp: (id, data) => apiClient.put(`/api/v1/inboxes/${id}/smtp`, data, { skipErrorToast: true }),
     test: (id) => apiClient.post(`/api/v1/inboxes/${id}/test`),
     sendTest: (id, to) =>
       apiClient.post(`/api/v1/inboxes/${id}/send-test`, null, { params: { to } }),

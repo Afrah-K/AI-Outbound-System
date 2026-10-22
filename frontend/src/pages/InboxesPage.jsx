@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { PlusIcon, TrashIcon, InboxIcon, PaperAirplaneIcon, SignalIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, TrashIcon, InboxIcon, PaperAirplaneIcon, SignalIcon, XMarkIcon, ServerStackIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
 import { api } from '../services/apiClient'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
@@ -8,6 +8,22 @@ import StatusBadge from '../components/common/StatusBadge'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
 import toast from 'react-hot-toast'
+import SmtpInboxModal from '../components/inboxes/SmtpInboxModal'
+
+function ProviderBadge({ inbox }) {
+  const smtp = inbox.provider === 'smtp'
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+        smtp ? 'bg-gray-100 text-gray-700' : 'bg-blue-50 text-blue-700'
+      }`}
+      title={smtp ? `SMTP ${inbox.smtp?.smtp_host} · IMAP ${inbox.smtp?.imap_host}` : 'Connected with Google'}
+    >
+      {smtp ? <ServerStackIcon className="h-3 w-3" /> : <InboxIcon className="h-3 w-3" />}
+      {smtp ? 'SMTP/IMAP' : 'Gmail'}
+    </span>
+  )
+}
 
 function HealthScore({ score }) {
   const getColor = () => {
@@ -35,6 +51,8 @@ export default function InboxesPage() {
   const queryClient = useQueryClient()
   const [sendModalInbox, setSendModalInbox] = useState(null)
   const [testRecipient, setTestRecipient] = useState('')
+  // null = closed, 'new' = connect a new SMTP/IMAP inbox, an inbox = update its settings
+  const [smtpModal, setSmtpModal] = useState(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['inboxes'],
@@ -113,12 +131,17 @@ export default function InboxesPage() {
         <div>
           <h1 className="text-3xl font-medium tracking-tight text-gray-900">Inboxes</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Manage your connected Gmail accounts
+            Manage your connected inboxes - Gmail, or any provider over SMTP/IMAP
           </p>
         </div>
-        <Button icon={PlusIcon} onClick={handleAddInbox}>
-          Add Inbox
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" icon={ServerStackIcon} onClick={() => setSmtpModal('new')}>
+            Connect SMTP/IMAP inbox
+          </Button>
+          <Button icon={PlusIcon} onClick={handleAddInbox}>
+            Connect Gmail
+          </Button>
+        </div>
       </div>
 
       {data?.inboxes?.length === 0 ? (
@@ -126,11 +149,16 @@ export default function InboxesPage() {
           <EmptyState
             icon={InboxIcon}
             title="No inboxes connected"
-            description="Connect a Gmail or GSuite account to start sending emails"
+            description="Connect a Gmail / Google Workspace account, or any other mail account over SMTP/IMAP, to start sending emails"
             action={
-              <Button icon={PlusIcon} onClick={handleAddInbox}>
-                Add Your First Inbox
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="secondary" icon={ServerStackIcon} onClick={() => setSmtpModal('new')}>
+                  Connect SMTP/IMAP inbox
+                </Button>
+                <Button icon={PlusIcon} onClick={handleAddInbox}>
+                  Connect Gmail
+                </Button>
+              </div>
             }
           />
         </Card>
@@ -145,7 +173,11 @@ export default function InboxesPage() {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900">{inbox.email_address}</p>
-                    <p className="text-sm text-gray-500">{inbox.domain}</p>
+                    <p className="mt-0.5 flex items-center gap-2 text-sm text-gray-500">
+                      <ProviderBadge inbox={inbox} />
+                      {inbox.domain}
+                      {inbox.connected === false && <span className="text-xs text-red-600">Not connected</span>}
+                    </p>
                   </div>
                 </div>
 
@@ -178,10 +210,16 @@ export default function InboxesPage() {
                     size="sm"
                     icon={SignalIcon}
                     onClick={() => testMutation.mutate(inbox.id)}
-                    loading={testMutation.isLoading && testMutation.variables === inbox.id}
+                    loading={testMutation.isPending && testMutation.variables === inbox.id}
                   >
                     Test
                   </Button>
+
+                  {inbox.provider === 'smtp' && (
+                    <Button variant="ghost" size="sm" icon={PencilSquareIcon} onClick={() => setSmtpModal(inbox)}>
+                      Settings
+                    </Button>
+                  )}
 
                   <Button
                     variant="secondary"
@@ -229,8 +267,8 @@ export default function InboxesPage() {
               </div>
 
               <p className="text-sm text-gray-600 mb-4">
-                Sends a real email from <strong>{sendModalInbox.email_address}</strong> via Gmail,
-                to confirm this inbox can actually send.
+                Sends a real email from <strong>{sendModalInbox.email_address}</strong>{' '}
+                {sendModalInbox.provider === 'smtp' ? 'over SMTP' : 'via Gmail'}, to confirm this inbox can actually send.
               </p>
 
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -256,7 +294,7 @@ export default function InboxesPage() {
                 <Button
                   className="flex-1"
                   onClick={handleSendTest}
-                  loading={sendTestMutation.isLoading}
+                  loading={sendTestMutation.isPending}
                 >
                   Send
                 </Button>
@@ -265,6 +303,8 @@ export default function InboxesPage() {
           </div>
         </div>
       )}
+
+      {smtpModal && <SmtpInboxModal inbox={smtpModal === 'new' ? null : smtpModal} onClose={() => setSmtpModal(null)} />}
     </div>
   )
 }

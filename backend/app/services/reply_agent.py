@@ -32,7 +32,7 @@ from app.services.personalization import build_company_context
 from app.services.unibox import (
     campaign_for_thread,
     collect_lead_replies,
-    gmail_for,
+    mail_for,
     sender_address,
     sync_tokens,
 )
@@ -245,9 +245,9 @@ async def _draft_conversation(
 
 async def _process_reply(db: Session, inbox: Inbox, reply: dict, instructions: str) -> dict:
     """Batch-run handling for one conversation from the lead-replies feed."""
-    gmail = gmail_for(inbox)
-    messages = await asyncio.to_thread(gmail.get_thread, reply["thread_id"])
-    sync_tokens(inbox, gmail, db)
+    mail = mail_for(inbox)
+    messages = await asyncio.to_thread(mail.get_thread, reply["thread_id"])
+    sync_tokens(inbox, mail, db)
 
     if not messages or sender_address(messages[-1]) == inbox.email_address.lower():
         return {"result": "skipped", "reason": "already answered"}
@@ -273,12 +273,12 @@ async def draft_thread(db: Session, inbox_id: int, thread_id: str, guidance: str
     if not openai_configured():
         raise ValueError("OPENAI_API_KEY is not configured in backend/.env")
     inbox = db.query(Inbox).filter(Inbox.id == inbox_id).first()
-    if not inbox or not inbox.access_token or not inbox.refresh_token:
-        raise ValueError("Inbox is not connected to Gmail")
+    if not inbox or not inbox.has_credentials:
+        raise ValueError("Inbox is not connected")
 
-    gmail = gmail_for(inbox)
-    messages = await asyncio.to_thread(gmail.get_thread, thread_id)
-    sync_tokens(inbox, gmail, db)
+    mail = mail_for(inbox)
+    messages = await asyncio.to_thread(mail.get_thread, thread_id)
+    sync_tokens(inbox, mail, db)
     if not messages:
         raise ValueError("Conversation not found")
 

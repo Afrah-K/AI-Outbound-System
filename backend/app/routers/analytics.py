@@ -351,7 +351,7 @@ async def get_placement(
             }
             for c in checks[:20]
         ],
-        "connected_inboxes": db.query(Inbox).filter(Inbox.is_active == True, Inbox.access_token.isnot(None)).count(),  # noqa: E712
+        "connected_inboxes": sum(1 for i in db.query(Inbox).filter(Inbox.is_active == True) if i.has_credentials),  # noqa: E712
     }
 
 

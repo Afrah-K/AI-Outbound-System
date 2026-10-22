@@ -9,9 +9,9 @@ plus EmailLog), so a restart just picks up where it left off. Runs as a
 periodic background loop like warmup - each cycle sends at most one email
 per inbox, so volume drips out across the send window instead of bursting.
 
-Restart safety: an EmailLog row is committed as SENDING *before* the Gmail
-call. If the process dies mid-send, the next cycle finds that row, can't
-know whether Gmail delivered it, and stops the lead (stop_reason
+Restart safety: an EmailLog row is committed as SENDING *before* the send
+call (Gmail API or SMTP). If the process dies mid-send, the next cycle finds
+that row, can't know whether the email went out, and stops the lead (stop_reason
 "send_interrupted") rather than risk emailing a prospect twice.
 """
 import asyncio
@@ -30,7 +30,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.integrations.gmail import GmailService
+from app.integrations.mail import MailProvider, provider_for, sync_tokens
 from app.models import (
     Campaign,
     CampaignLead,
@@ -289,7 +289,7 @@ def _strip_reply_prefix(subject: Optional[str]) -> str:
 # ---------------------------------------------------------------------------
 
 def _inbox_connected(inbox: Inbox) -> bool:
-    return bool(inbox.is_active and inbox.access_token and inbox.refresh_token)
+    return inbox.is_connected
 
 
 def _reset_daily_counter(inbox: Inbox, now: datetime) -> None:
@@ -316,11 +316,8 @@ def _past_send_gap(db: Session, inbox: Inbox, now: datetime) -> bool:
     return (now - last_sent).total_seconds() >= gap
 
 
-def _sync_tokens(inbox: Inbox, gmail: GmailService) -> None:
-    updated = gmail.updated_tokens
-    if updated["access_token"] != inbox.access_token:
-        inbox.access_token = updated["access_token"]
-        inbox.token_expiry = updated["token_expiry"]
+def _sync_tokens(inbox: Inbox, mail: MailProvider) -> None:
+    sync_tokens(inbox, mail)
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +413,7 @@ def validate_campaign_ready(db: Session, campaign: Campaign) -> list:
     if not inboxes:
         errors.append("Campaign has no inboxes assigned")
     elif not any(_inbox_connected(i) for i in inboxes):
-        errors.append("None of the campaign's inboxes are active and connected to Gmail")
+        errors.append("None of the campaign's inboxes are active and connected")
 
     has_sendable_leads = (
         db.query(CampaignLead)
@@ -589,20 +586,16 @@ async def _process_lead(
     db.commit()
 
     try:
-        gmail = GmailService(
-            access_token=inbox.access_token,
-            refresh_token=inbox.refresh_token,
-            token_expiry=inbox.token_expiry,
-        )
+        mail = provider_for(inbox)
         sent = await asyncio.to_thread(
-            gmail.send_email,
+            mail.send_email,
             to=person.email,
             subject=subject,
             body=body,
             from_name=inbox.display_name,
             thread_id=thread_id,
         )
-        _sync_tokens(inbox, gmail)
+        _sync_tokens(inbox, mail)
     except Exception as exc:
         log.status = EmailStatus.FAILED
         log.error_message = str(exc)
@@ -858,14 +851,14 @@ async def check_replies(db: Session) -> dict:
             if not inbox or not _inbox_connected(inbox):
                 continue
             try:
-                gmail = GmailService(inbox.access_token, inbox.refresh_token, inbox.token_expiry)
+                mail = provider_for(inbox)
             except Exception as exc:
                 summary["errors"].append({"inbox": inbox.email_address, "error": str(exc)})
                 continue
 
             for thread_id, log in list(threads.items())[:MAX_THREADS_CHECKED_PER_INBOX]:
                 try:
-                    messages = await asyncio.to_thread(gmail.get_thread, thread_id)
+                    messages = await asyncio.to_thread(mail.get_thread, thread_id)
                 except Exception as exc:
                     summary["errors"].append({"inbox": inbox.email_address, "thread_id": thread_id, "error": str(exc)})
                     continue
@@ -877,7 +870,7 @@ async def check_replies(db: Session) -> dict:
                     summary["replies" if event == "replied" else "bounces"] += 1
                     logger.info(f"campaign.{event}", campaign_id=log.campaign_id, person=log.to_email)
 
-            _sync_tokens(inbox, gmail)
+            _sync_tokens(inbox, mail)
             db.commit()
 
         return summary

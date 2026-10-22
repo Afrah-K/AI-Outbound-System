@@ -14,7 +14,8 @@ For anyone changing the code, or who wants to know exactly what the system does 
 ```
 Browser (React, :5173) ──/api──▶ FastAPI (:8000) ──▶ SQLite (backend/data/outbound.db)
                                      │
-                                     ├── Gmail API  (send, read threads; your OAuth app)
+                                     ├── Gmail API  (Gmail inboxes: send, read threads; your OAuth app)
+                                     ├── SMTP + IMAP (any other inbox: send / read)
                                      ├── OpenAI API (gpt-4o-mini; optional)
                                      └── Public web (company sites, DuckDuckGo, Clutch)
 ```
@@ -22,7 +23,12 @@ Browser (React, :5173) ──/api──▶ FastAPI (:8000) ──▶ SQLite (bac
 - **Backend** (`backend/app`):
   - **Routers:** FastAPI routers handle HTTP (`routers/`).
   - **Logic:** business logic lives in `services/`.
-  - **Gmail client:** wraps the Gmail API (`integrations/gmail/service.py`) and refreshes OAuth tokens as needed. Refreshed tokens are saved back to the inbox row.
+  - **Mail providers** (`integrations/mail/`):
+    - **Interface:** every feature talks to an inbox through one `MailProvider` interface (`base.py`). `provider_for(inbox)` returns the right implementation for that inbox.
+    - **Gmail:** `integrations/gmail/service.py` wraps the Gmail API and refreshes OAuth tokens as needed. `sync_tokens` saves refreshed tokens back to the inbox row.
+    - **SMTP/IMAP:** `smtp_imap.py` uses only the standard library. A message id is its `Message-ID` header, and a thread id is the first message's `Message-ID`. Folders map to Gmail-style labels: `INBOX`, `SENT`, `SPAM` (Junk), `TRASH`, plus `UNREAD`. Callers therefore never branch on the provider.
+    - **Passwords:** these are Fernet-encrypted with `MAIL_CREDENTIALS_KEY` (`credentials.py`).
+    - **Connected:** `Inbox.is_connected` / `has_credentials` decide whether an inbox can send, for either provider.
   - **Database:** SQLAlchemy 2 with synchronous sessions; all models are in `models/`.
 - **Background loops** are started in `main.py`'s lifespan as `asyncio` tasks in the same process. There's no separate worker or queue:
   - `services/campaign_engine.py`: the sender, every 60 s, and the reply checker, every 5 min
@@ -113,14 +119,14 @@ SQLite at `backend/data/outbound.db`. The main tables:
 
 | Table | Holds |
 |---|---|
-| `inboxes` | Connected Gmail accounts: OAuth tokens, daily limit and counter, warmup stage, health |
+| `inboxes` | Connected inboxes. `provider` is `gmail` (OAuth tokens) or `smtp` (server settings plus encrypted password). Also the daily limit and counter, warmup stage and health. |
 | `people`, `companies` | Prospects and their companies (enrichment data, homepage text, personalisation hook) |
 | `lead_lists`, `lead_list_members` | One list per CSV upload, and who was in it |
 | `sequences`, `sequence_steps` | Templates. Steps are ordered by `order`, renumbered 0, 1, 2… on every change. |
 | `campaigns` | Settings, pacing (`min_gap_minutes`, `max_gap_minutes`, `next_send_after`), denormalised stats |
 | `campaign_inboxes` | Which inboxes a campaign sends from |
 | `campaign_leads` | Each lead's progress: `current_step` (an index into the ordered steps), `status`, `next_send_at`, `stop_reason` |
-| `email_logs` | Every email sent: campaign, warmup or manual reply. Gmail message and thread IDs, status, timestamps. |
+| `email_logs` | Every email sent: campaign, warmup or manual reply. The provider's message and thread IDs (`gmail_*` columns; `Message-ID`s for SMTP inboxes), status, timestamps. |
 | `agent_drafts`, `reply_agent_settings` | Reply agent output and settings |
 | `warmup_configs`, `warmup_logs` | Warmup stage settings and history |
 

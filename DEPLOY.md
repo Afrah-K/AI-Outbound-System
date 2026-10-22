@@ -44,7 +44,7 @@ The backend creates the tables on its first start.
    | `OPENAI_API_KEY` | your key (reply agent, personalizer) |
    | `GOOGLE_MAPS_API_KEY` | optional |
 
-   `SECRET_KEY` is generated for you; everything else is set in `render.yaml`.
+   `SECRET_KEY` and `MAIL_CREDENTIALS_KEY` (which encrypts SMTP/IMAP inbox passwords) are generated for you; everything else is set in `render.yaml`. Don't regenerate `MAIL_CREDENTIALS_KEY` later. If it changes, SMTP/IMAP inboxes need their passwords re-entered.
 4. Deploy, then open `https://ai-outbound-api.onrender.com/health` - it should say `{"status":"healthy"}`.
 
 **If Render gave the service a different address** (it adds a suffix when the name is taken), change the destination in `vercel.json` to that address and push.

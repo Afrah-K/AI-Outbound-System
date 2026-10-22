@@ -1,7 +1,8 @@
 """
 Shared Unibox logic, used by the Unibox router and the reply agent:
-collecting lead replies across every connected inbox, and sending a reply
-that threads correctly in Gmail and in the recipient's own mail client.
+collecting lead replies across every connected inbox (Gmail or SMTP/IMAP),
+and sending a reply that threads correctly in the inbox and in the
+recipient's own mail client.
 """
 import asyncio
 from datetime import datetime
@@ -11,7 +12,8 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.integrations.gmail import GmailService
+from app.integrations.mail import MailProvider, provider_for
+from app.integrations.mail import sync_tokens as copy_refreshed_tokens
 from app.models import (
     AgentDraft,
     Campaign,
@@ -25,12 +27,9 @@ from app.models import (
 from app.services.campaign_engine import record_thread_event
 
 
-def sync_tokens(inbox: Inbox, gmail: GmailService, db: Session):
-    """Persist a refreshed access token if GmailService had to renew it."""
-    updated = gmail.updated_tokens
-    if updated["access_token"] != inbox.access_token:
-        inbox.access_token = updated["access_token"]
-        inbox.token_expiry = updated["token_expiry"]
+def sync_tokens(inbox: Inbox, mail: MailProvider, db: Session):
+    """Persist a refreshed access token if a Gmail inbox had to renew it (no-op for SMTP inboxes)."""
+    if copy_refreshed_tokens(inbox, mail):
         db.commit()
 
 
@@ -38,8 +37,8 @@ def connected_inboxes(db: Session) -> list:
     return db.query(Inbox).filter(Inbox.is_active == True).all()  # noqa: E712
 
 
-def gmail_for(inbox: Inbox) -> GmailService:
-    return GmailService(inbox.access_token, inbox.refresh_token, inbox.token_expiry)
+def mail_for(inbox: Inbox) -> MailProvider:
+    return provider_for(inbox)
 
 
 def sender_address(msg: dict) -> str:
@@ -153,10 +152,10 @@ async def collect_lead_replies(db: Session, days: int = 30, per_inbox: int = 50)
     query = f"in:inbox newer_than:{days}d"
 
     def fetch(inbox: Inbox):
-        gmail = gmail_for(inbox)
-        return gmail, gmail.list_message_metadata(query=query, max_results=per_inbox)
+        mail = mail_for(inbox)
+        return mail, mail.list_message_metadata(query=query, max_results=per_inbox)
 
-    connected = [i for i in inboxes if i.access_token and i.refresh_token]
+    connected = [i for i in inboxes if i.has_credentials]
     inbox_errors = [
         {"inbox_id": i.id, "email": i.email_address, "error": "Not connected"}
         for i in inboxes if i not in connected
@@ -168,8 +167,8 @@ async def collect_lead_replies(db: Session, days: int = 30, per_inbox: int = 50)
         if isinstance(result, Exception):
             inbox_errors.append({"inbox_id": inbox.id, "email": inbox.email_address, "error": str(result)})
             continue
-        gmail, messages = result
-        sync_tokens(inbox, gmail, db)
+        mail, messages = result
+        sync_tokens(inbox, mail, db)
         for msg in messages:
             sender = sender_address(msg)
             if sender and sender not in own_addresses:
@@ -238,8 +237,8 @@ async def send_thread_reply(
     Reply inside an existing thread, with In-Reply-To/References set from the
     thread's last message, and log it as a manual email. Raises on failure.
     """
-    gmail = gmail_for(inbox)
-    thread_messages = await asyncio.to_thread(gmail.get_thread, thread_id)
+    mail = mail_for(inbox)
+    thread_messages = await asyncio.to_thread(mail.get_thread, thread_id)
     last = thread_messages[-1] if thread_messages else {}
 
     subject = subject or last.get("subject") or ""
@@ -247,7 +246,7 @@ async def send_thread_reply(
         subject = f"Re: {subject}".strip()
 
     result = await asyncio.to_thread(
-        gmail.send_email,
+        mail.send_email,
         to=to,
         subject=subject,
         body=body,
@@ -256,7 +255,7 @@ async def send_thread_reply(
         in_reply_to=last.get("message_id_header") or None,
         references=last.get("references") or None,
     )
-    sync_tokens(inbox, gmail, db)
+    sync_tokens(inbox, mail, db)
 
     person = db.query(Person).filter(func.lower(Person.email) == to.lower()).first()
     db.add(EmailLog(

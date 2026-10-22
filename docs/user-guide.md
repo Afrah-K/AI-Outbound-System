@@ -24,7 +24,17 @@ How to use each part of Outbound, in the order you'll usually need it.
 
 ## Inboxes
 
-Connect the Gmail accounts you send from. Click **Add Inbox** and sign in with Google. (One-time Google Cloud setup is in [Setup](setup.md#3-google-oauth-to-connect-gmail).)
+Connect the mail accounts you send from. There are two ways:
+
+- **Connect Gmail:** for Gmail and Google Workspace accounts. You sign in with Google; the one-time Google Cloud setup is in [Setup](setup.md#3-google-oauth-to-connect-gmail).
+- **Connect SMTP/IMAP inbox:** for any other provider, such as Zoho, Fastmail, a cold-email inbox provider or your own mail server.
+  1. Enter the email address and the password. Many providers need an *app password* here.
+  2. Pick your provider to fill in the server settings, or type in the SMTP and IMAP settings your provider gives you.
+  3. Both logins are tested before the inbox is saved. If one fails, the form tells you which one and why.
+  4. To change the server settings or password later, use **Settings** on the inbox card.
+  5. The server needs `MAIL_CREDENTIALS_KEY` set first ([Setup](setup.md#4-smtpimap-inboxes-any-other-mail-provider)).
+
+Both kinds work the same way everywhere: campaigns, warmup, Lead Box, the reply agent and placement tests. Daily limits, warmup stages and health scores apply equally. The badge on each card shows which kind it is.
 
 Each inbox card shows:
 
