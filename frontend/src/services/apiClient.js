@@ -113,6 +113,9 @@ export const api = {
     getEnrichJob: (jobId) => apiClient.get(`/api/v1/leads/enrich/jobs/${jobId}`),
     rescanEnrich: (companyIds, forceIds, sourceName = null) =>
       apiClient.post('/api/v1/leads/enrich/rescan', { company_ids: companyIds, force_ids: forceIds, source_name: sourceName }),
+    // emails: [{ email, previous }] - previous = the address an edited email replaces
+    setCompanyEmails: (companyId, emails) => apiClient.put(`/api/v1/leads/companies/${companyId}/emails`, { emails }),
+    createPerson: (data) => apiClient.post('/api/v1/leads/people', data),
     pickEmail: (companyId, email) =>
       apiClient.post(`/api/v1/leads/companies/${companyId}/emails/pick`, { email }),
     startVerifyJob: (results) => apiClient.post('/api/v1/leads/verify/jobs', { results }),

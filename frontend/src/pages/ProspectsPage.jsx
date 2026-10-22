@@ -14,6 +14,7 @@ import {
   MegaphoneIcon,
   QueueListIcon,
   TrashIcon,
+  UserPlusIcon,
 } from '@heroicons/react/24/outline'
 import { clsx } from 'clsx'
 import { api } from '../services/apiClient'
@@ -26,6 +27,7 @@ import EmptyState from '../components/common/EmptyState'
 import ConfirmDialog from '../components/common/ConfirmDialog'
 import toast from 'react-hot-toast'
 import { nameFromFile } from '../utils/listNames'
+import AddProspectModal from '../components/prospects/AddProspectModal'
 
 const PER_PAGE = 30
 
@@ -612,6 +614,7 @@ export default function ProspectsPage() {
   const [page, setPage] = useState(0)
   const [selected, setSelected] = useState(() => new Set())
   const [showImport, setShowImport] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const debouncedSearch = useDebounced(search)
 
   // New filters start from page 1 with nothing selected.
@@ -678,9 +681,14 @@ export default function ProspectsPage() {
           <h1 className="text-3xl font-medium tracking-tight text-gray-900">Prospects</h1>
           <p className="mt-1 text-sm text-gray-500">Everyone you can reach out to - search, filter and add them to campaigns</p>
         </div>
-        <Button icon={ArrowUpTrayIcon} onClick={() => setShowImport(true)}>
-          Import CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" icon={UserPlusIcon} onClick={() => setShowAdd(true)}>
+            Add prospect
+          </Button>
+          <Button icon={ArrowUpTrayIcon} onClick={() => setShowImport(true)}>
+            Import CSV
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -757,11 +765,16 @@ export default function ProspectsPage() {
             <EmptyState
               icon={UserGroupIcon}
               title="No prospects yet"
-              description="Import a CSV to get started"
+              description="Import a CSV or add someone by hand to get started"
               action={
-                <Button icon={ArrowUpTrayIcon} onClick={() => setShowImport(true)}>
-                  Import CSV
-                </Button>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="secondary" icon={UserPlusIcon} onClick={() => setShowAdd(true)}>
+                    Add prospect
+                  </Button>
+                  <Button icon={ArrowUpTrayIcon} onClick={() => setShowImport(true)}>
+                    Import CSV
+                  </Button>
+                </div>
               }
             />
           )}
@@ -906,6 +919,15 @@ export default function ProspectsPage() {
       )}
 
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+      {showAdd && (
+        <AddProspectModal
+          lists={listsData?.lists}
+          defaultListId={listId}
+          onClose={() => setShowAdd(false)}
+          // Show the list they were added to
+          onAdded={(result) => result.list_id && setListId(String(result.list_id))}
+        />
+      )}
     </div>
   )
 }

@@ -385,26 +385,7 @@ async def bulk_delete_people(payload: BulkDeletePeopleRequest, db: Session = Dep
     if not matched:
         return {"matched": 0, "deleted": 0, "kept": 0, "kept_reasons": {}, "dry_run": payload.dry_run}
 
-    emailed, kept_status = set(), {}
-    for i in range(0, len(matched), DELETE_CHUNK):
-        chunk = matched[i:i + DELETE_CHUNK]
-        emailed |= {pid for (pid,) in db.query(EmailLog.person_id).filter(EmailLog.person_id.in_(chunk)).distinct()}
-        emailed |= {pid for (pid,) in db.query(AgentDraft.person_id).filter(AgentDraft.person_id.in_(chunk)).distinct()}
-        kept_status.update(
-            db.query(Person.id, Person.status).filter(Person.id.in_(chunk), Person.status.in_(KEEP_STATUSES)).all()
-        )
-
-    kept_reasons: dict = {}
-    deletable = []
-    for pid in matched:
-        if pid in kept_status:
-            reason = kept_status[pid].value
-        elif pid in emailed:
-            reason = "emailed"
-        else:
-            deletable.append(pid)
-            continue
-        kept_reasons[reason] = kept_reasons.get(reason, 0) + 1
+    deletable, kept_reasons = _split_deletable(db, matched)
 
     in_campaigns = set()
     for i in range(0, len(deletable), DELETE_CHUNK):
@@ -423,9 +404,45 @@ async def bulk_delete_people(payload: BulkDeletePeopleRequest, db: Session = Dep
     if payload.dry_run or not deletable:
         return result
 
+    _delete_people(db, deletable)
+    db.commit()
+    return result
+
+
+def _split_deletable(db: Session, person_ids: list) -> tuple:
+    """
+    (deletable ids, {reason: count} kept). Prospects who've been emailed,
+    replied, bounced, unsubscribed or are do-not-contact are kept, so their
+    history and opt-outs survive.
+    """
+    emailed, kept_status = set(), {}
+    for i in range(0, len(person_ids), DELETE_CHUNK):
+        chunk = person_ids[i:i + DELETE_CHUNK]
+        emailed |= {pid for (pid,) in db.query(EmailLog.person_id).filter(EmailLog.person_id.in_(chunk)).distinct()}
+        emailed |= {pid for (pid,) in db.query(AgentDraft.person_id).filter(AgentDraft.person_id.in_(chunk)).distinct()}
+        kept_status.update(
+            db.query(Person.id, Person.status).filter(Person.id.in_(chunk), Person.status.in_(KEEP_STATUSES)).all()
+        )
+
+    kept_reasons: dict = {}
+    deletable = []
+    for pid in person_ids:
+        if pid in kept_status:
+            reason = kept_status[pid].value
+        elif pid in emailed:
+            reason = "emailed"
+        else:
+            deletable.append(pid)
+            continue
+        kept_reasons[reason] = kept_reasons.get(reason, 0) + 1
+    return deletable, kept_reasons
+
+
+def _delete_people(db: Session, person_ids: list) -> None:
+    """Delete prospects (check _split_deletable first) and take them out of lists, campaigns and the send queue."""
     affected_campaigns = set()
-    for i in range(0, len(deletable), DELETE_CHUNK):
-        chunk = deletable[i:i + DELETE_CHUNK]
+    for i in range(0, len(person_ids), DELETE_CHUNK):
+        chunk = person_ids[i:i + DELETE_CHUNK]
         affected_campaigns |= {
             cid for (cid,) in db.query(CampaignLead.campaign_id).filter(CampaignLead.person_id.in_(chunk)).distinct()
         }
@@ -433,12 +450,9 @@ async def bulk_delete_people(payload: BulkDeletePeopleRequest, db: Session = Dep
         db.query(CampaignLead).filter(CampaignLead.person_id.in_(chunk)).delete(synchronize_session=False)
         db.query(LeadListMember).filter(LeadListMember.person_id.in_(chunk)).delete(synchronize_session=False)
         db.query(Person).filter(Person.id.in_(chunk)).delete(synchronize_session=False)
-
     db.flush()
     for campaign in db.query(Campaign).filter(Campaign.id.in_(affected_campaigns)):
         campaign.total_leads = db.query(CampaignLead).filter(CampaignLead.campaign_id == campaign.id).count()
-    db.commit()
-    return result
 
 
 class RenameListRequest(BaseModel):
@@ -524,6 +538,197 @@ async def pick_unpicked_email(company_id: int, payload: PickEmailRequest, db: Se
     db.commit()
 
     return {"email": email, "person_id": person.id, "unpicked_emails": load_unpicked(company)}
+
+
+class CompanyEmailEdit(BaseModel):
+    email: str
+    previous: Optional[str] = None  # the email this one replaces, when it was edited
+
+
+class CompanyEmailsRequest(BaseModel):
+    emails: List[CompanyEmailEdit]
+
+
+@router.put("/companies/{company_id}/emails")
+async def set_company_emails(company_id: int, payload: CompanyEmailsRequest, db: Session = Depends(get_db)):
+    """
+    Set a company's emails by hand - the Enricher's "Edit": add ones you found
+    yourself (LinkedIn, a site the Enricher couldn't read), fix typos, remove
+    wrong ones. Each email is a prospect at the company; a fixed one keeps its
+    prospect (lists, campaigns) under the new address. A removed one is
+    deleted unless it's been emailed (or replied, bounced...) - then it stays
+    a prospect, just no longer listed under this company.
+    """
+    from app.services.lead_import import EMAIL_RE
+
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    wanted, previous_of = [], {}
+    for item in payload.emails:
+        email = item.email.strip().lower()
+        if not email:
+            continue
+        if not EMAIL_RE.match(email):
+            raise HTTPException(status_code=400, detail=f"'{item.email.strip()}' isn't a valid email address")
+        if email not in wanted:
+            wanted.append(email)
+            if item.previous and item.previous.strip().lower() != email:
+                previous_of[email] = item.previous.strip().lower()
+
+    current = {p.email.lower(): p for p in company.people}
+    owners = {
+        p.email.lower(): p
+        for p in db.query(Person).filter(func.lower(Person.email).in_(wanted))
+    } if wanted else {}
+    for email in wanted:
+        person = owners.get(email)
+        if person is not None and person.company_id not in (None, company.id):
+            other = db.query(Company.name).filter(Company.id == person.company_id).scalar()
+            raise HTTPException(status_code=409, detail=f"{email} is already a prospect at {other or 'another company'}")
+
+    fixed_ids = set()
+    for email in wanted:
+        if email in current:
+            continue
+        person = owners.get(email)
+        old = current.get(previous_of.get(email, ""))
+        can_fix = (
+            person is None and old is not None and old.id not in fixed_ids
+            and old.email.lower() not in wanted and not _split_deletable(db, [old.id])[1]
+        )
+        if can_fix:
+            old.email = email  # a fixed typo: same prospect (lists, campaigns), new address
+            fixed_ids.add(old.id)
+        elif person is None:
+            db.add(Person(email=email, company_id=company.id, status=LeadStatus.NEW))
+        else:
+            person.company_id = company.id
+    db.flush()
+
+    # Whatever's no longer on the form (an already-contacted one replaced by an edit included)
+    removed = [p.id for e, p in current.items() if e not in wanted and p.id not in fixed_ids]
+
+    kept_count = 0
+    if removed:
+        deletable, kept_reasons = _split_deletable(db, removed)
+        _delete_people(db, deletable)
+        kept = set(removed) - set(deletable)
+        for person in db.query(Person).filter(Person.id.in_(kept)):
+            person.company_id = None
+        kept_count = len(kept)
+
+    # Emails on file now - the enrichment is reused next time instead of re-scraped
+    company.enrichment_status = "completed" if wanted else "no_emails_found"
+    company.enrichment_error = None
+    if company.unpicked_emails is not None:
+        save_unpicked(company, [i for i in load_unpicked(company) if i["email"].lower() not in wanted])
+    db.commit()
+    db.refresh(company)
+
+    return {
+        "emails": [p.email for p in sorted(company.people, key=lambda p: p.id)],
+        "status": company.enrichment_status,
+        "unpicked_emails": load_unpicked(company),
+        "kept_as_prospects": kept_count,
+    }
+
+
+class CreatePersonRequest(BaseModel):
+    email: str
+    first_name: str = ""
+    last_name: str = ""
+    role: str = ""
+    company_name: str = ""
+    website: str = ""
+    linkedin_url: str = ""
+    phone: str = ""
+    list_id: Optional[int] = None
+
+
+def _clip(value: str, limit: int) -> Optional[str]:
+    value = (value or "").strip()
+    return value[:limit] or None
+
+
+MANUAL_LIST_NAME = "Added manually"
+
+
+@router.post("/people")
+async def create_person(payload: CreatePersonRequest, db: Session = Depends(get_db)):
+    """
+    Add one prospect by hand, optionally linked to a company. It goes in the
+    given lead list, or else in an "Added manually" list.
+    """
+    from urllib.parse import urlparse
+    from app.services.lead_import import EMAIL_RE
+
+    email = payload.email.strip().lower()
+    if not EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+    if db.query(Person.id).filter(func.lower(Person.email) == email).first():
+        raise HTTPException(status_code=409, detail=f"{email} is already a prospect")
+
+    lead_list = None
+    if payload.list_id is not None:
+        lead_list = db.query(LeadList).filter(LeadList.id == payload.list_id, LeadList.deleted_at.is_(None)).first()
+        if not lead_list:
+            raise HTTPException(status_code=404, detail="Lead list not found")
+    else:
+        lead_list = (
+            db.query(LeadList)
+            .filter(LeadList.name == MANUAL_LIST_NAME, LeadList.deleted_at.is_(None))
+            .order_by(LeadList.id)
+            .first()
+        )
+        if not lead_list:
+            lead_list = LeadList(name=MANUAL_LIST_NAME)
+            db.add(lead_list)
+            db.flush()
+
+    # Link to an existing company (same website domain, then same name), else create one
+    website = (payload.website or "").strip()
+    domain = None
+    if website:
+        try:
+            domain = urlparse(website if "://" in website else f"https://{website}").netloc.lower().removeprefix("www.") or None
+        except ValueError:
+            domain = None
+    company_name = (payload.company_name or "").strip()
+    company = None
+    if domain:
+        company = db.query(Company).filter(Company.domain == domain).first()
+    if not company and company_name:
+        company = db.query(Company).filter(func.lower(Company.name) == company_name.lower()).first()
+    if not company and (company_name or domain):
+        company = Company(name=_clip(company_name or domain, 255), domain=domain, website=_clip(website, 512))
+        db.add(company)
+        db.flush()
+
+    first, last = _clip(payload.first_name, 100), _clip(payload.last_name, 100)
+    person = Person(
+        email=email,
+        first_name=first,
+        last_name=last,
+        full_name=" ".join(n for n in (first, last) if n) or None,
+        role=_clip(payload.role, 255),
+        linkedin_url=_clip(payload.linkedin_url, 512),
+        phone=_clip(payload.phone, 50),
+        company_id=company.id if company else None,
+        status=LeadStatus.NEW,
+    )
+    db.add(person)
+    db.flush()
+    db.add(LeadListMember(lead_list_id=lead_list.id, person_id=person.id))
+    db.commit()
+    return {
+        "id": person.id,
+        "email": email,
+        "company": company.name if company else None,
+        "list_id": lead_list.id,
+        "list_name": lead_list.name,
+    }
 
 
 @router.post("/companies/{company_id}/enrich")

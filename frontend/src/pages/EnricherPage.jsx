@@ -5,8 +5,6 @@ import {
   MagnifyingGlassCircleIcon,
   ArrowUpTrayIcon,
   ArrowDownTrayIcon,
-  EnvelopeIcon,
-  CheckCircleIcon,
   XCircleIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -23,6 +21,7 @@ import Card from '../components/common/Card'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
 import UnpickedEmailsPanel from '../components/enricher/UnpickedEmailsPanel'
+import CompanyEmailsCell from '../components/enricher/CompanyEmailsCell'
 import ExportDialog from '../components/common/ExportDialog'
 import { shortDate, toFileName } from '../utils/listNames'
 import toast from 'react-hot-toast'
@@ -249,23 +248,11 @@ export default function EnricherPage() {
     onSuccess: (response) => handleJobStarted(response, (total) => `Re-scanning ${total} companies for unpicked emails`),
   })
 
-  // "Use" on an unpicked email: it's now a prospect, so move it into the row's emails
-  const handlePicked = (companyId, email) => {
+  // Change one result row (and the cached copy, so it survives a reload)
+  const updateRow = (companyId, change) => {
     setJob((prev) => {
-      const next = {
-        ...prev,
-        emails_found: (prev.emails_found || 0) + 1,
-        results: prev.results.map((r) =>
-          r.company_id === companyId
-            ? {
-                ...r,
-                status: 'completed',
-                emails: [...r.emails, email],
-                unpicked_emails: (r.unpicked_emails || []).filter((u) => u.email !== email),
-              }
-            : r
-        ),
-      }
+      const results = prev.results.map((r) => (r.company_id === companyId ? { ...r, ...change(r) } : r))
+      const next = { ...prev, results, emails_found: results.reduce((n, r) => n + r.emails.length, 0) }
       try {
         localStorage.setItem(JOB_CACHE_KEY, JSON.stringify(next))
       } catch {
@@ -274,6 +261,23 @@ export default function EnricherPage() {
       return next
     })
   }
+
+  // "Use" on an unpicked email: it's now a prospect, so move it into the row's emails
+  const handlePicked = (companyId, email) =>
+    updateRow(companyId, (r) => ({
+      status: 'completed',
+      emails: r.emails.includes(email) ? r.emails : [...r.emails, email],
+      unpicked_emails: (r.unpicked_emails || []).filter((u) => u.email !== email),
+    }))
+
+  // Emails edited by hand on a row
+  const handleEmailsSaved = (companyId, result) =>
+    updateRow(companyId, () => ({
+      status: result.status,
+      emails: result.emails,
+      unpicked_emails: result.unpicked_emails,
+      error: null,
+    }))
 
   // The app-wide task tracker polls the job (so it keeps going while you're on
   // other pages) and caches it under JOB_CACHE_KEY; mirror it here.
@@ -492,27 +496,7 @@ export default function EnricherPage() {
                         ) : '-'}
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        {r.emails.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <CheckCircleIcon className="h-4 w-4 text-green-500 shrink-0" />
-                            <div className="flex flex-wrap gap-1">
-                              {r.emails.map((email) => (
-                                <span
-                                  key={email}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                                >
-                                  <EnvelopeIcon className="h-3 w-3" />
-                                  {email}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-gray-400">
-                            <XCircleIcon className="h-4 w-4 shrink-0" />
-                            {r.error || 'No public email found'}
-                          </div>
-                        )}
+                        <CompanyEmailsCell row={r} onSaved={(result) => handleEmailsSaved(r.company_id, result)} />
                       </td>
                     </tr>
                   ))}
