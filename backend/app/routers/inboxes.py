@@ -63,6 +63,8 @@ async def list_inboxes(db: Session = Depends(get_db)):
                 "daily_limit": inbox.daily_limit,
                 "emails_sent_today": inbox.emails_sent_today,
                 "warmup_stage": inbox.warmup_stage.value if inbox.warmup_stage else None,
+                "is_warmup_paused": inbox.is_warmup_paused,
+                "pause_reason": inbox.pause_reason,
                 "health_score": inbox.health_score,
                 "is_active": inbox.is_active,
                 "created_at": inbox.created_at.isoformat() if inbox.created_at else None,

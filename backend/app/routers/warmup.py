@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Inbox
+from app.models import Inbox, WarmupStage
 from app.services.warmup import get_activity, get_status, run_warmup_cycle
 
 router = APIRouter()
+
+WARMUP_CANCELLED = "Warmup cancelled"
 
 
 @router.get("/status")
@@ -27,11 +29,17 @@ async def warmup_run_now(db: Session = Depends(get_db)):
     return summary
 
 
-@router.post("/{inbox_id}/pause")
-async def warmup_pause(inbox_id: int, db: Session = Depends(get_db)):
+def _get_inbox(db: Session, inbox_id: int) -> Inbox:
     inbox = db.query(Inbox).filter(Inbox.id == inbox_id).first()
     if not inbox:
         raise HTTPException(status_code=404, detail="Inbox not found")
+    return inbox
+
+
+@router.post("/{inbox_id}/pause")
+async def warmup_pause(inbox_id: int, db: Session = Depends(get_db)):
+    """Stop warmup for this inbox but keep its stage, so resuming picks up where it left off."""
+    inbox = _get_inbox(db, inbox_id)
     inbox.is_warmup_paused = True
     inbox.pause_reason = "Paused by user"
     db.commit()
@@ -40,10 +48,24 @@ async def warmup_pause(inbox_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{inbox_id}/resume")
 async def warmup_resume(inbox_id: int, db: Session = Depends(get_db)):
-    inbox = db.query(Inbox).filter(Inbox.id == inbox_id).first()
-    if not inbox:
-        raise HTTPException(status_code=404, detail="Inbox not found")
+    """Resume a paused warmup, or start a cancelled one over from stage 1."""
+    inbox = _get_inbox(db, inbox_id)
     inbox.is_warmup_paused = False
     inbox.pause_reason = None
+    db.commit()
+    return {"success": True}
+
+
+@router.post("/{inbox_id}/cancel")
+async def warmup_cancel(inbox_id: int, db: Session = Depends(get_db)):
+    """
+    End warmup for this inbox: progress goes back to not started and it stays
+    paused, so the scheduler doesn't start it again on its own. Resume starts over.
+    """
+    inbox = _get_inbox(db, inbox_id)
+    inbox.warmup_stage = WarmupStage.NOT_STARTED
+    inbox.warmup_started_at = None
+    inbox.is_warmup_paused = True
+    inbox.pause_reason = WARMUP_CANCELLED
     db.commit()
     return {"success": True}
