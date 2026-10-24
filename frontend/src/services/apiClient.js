@@ -92,6 +92,7 @@ export const api = {
     getCompany: (id) => apiClient.get(`/api/v1/leads/companies/${id}`),
     listPeople: (params) => apiClient.get('/api/v1/leads/people', { params }),
     getPerson: (id) => apiClient.get(`/api/v1/leads/people/${id}`),
+    deletePerson: (id) => apiClient.delete(`/api/v1/leads/people/${id}`),
     // filters = the Prospects page's { search, status, list_id }; dryRun only reports counts
     bulkDelete: (filters, dryRun = false) =>
       apiClient.post('/api/v1/leads/people/bulk-delete', { ...filters, dry_run: dryRun }),

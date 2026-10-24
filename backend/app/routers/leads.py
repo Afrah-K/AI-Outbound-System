@@ -233,6 +233,42 @@ async def get_person(person_id: int, db: Session = Depends(get_db)):
     }
 
 
+KEEP_REASON_TEXT = {
+    "emailed": "has been emailed",
+    "contacted": "has been contacted",
+    "replied": "has replied",
+    "converted": "is converted",
+    "bounced": "has bounced",
+    "unsubscribed": "has unsubscribed",
+    "do_not_contact": "is marked do-not-contact",
+}
+
+
+@router.delete("/people/{person_id}")
+async def delete_person(person_id: int, db: Session = Depends(get_db)):
+    """
+    Delete one prospect (the minus button on the Prospects page). Same rule as
+    bulk delete: anyone who's been emailed or opted out is kept, so their
+    history and opt-out survive.
+    """
+    person = db.query(Person).filter(Person.id == person_id).first()
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    deletable, kept_reasons = _split_deletable(db, [person.id])
+    if not deletable:
+        reason = next(iter(kept_reasons))
+        raise HTTPException(
+            status_code=409,
+            detail=f"{person.email} {KEEP_REASON_TEXT.get(reason, reason)}, so it's kept to preserve its history",
+        )
+
+    in_campaigns = db.query(CampaignLead).filter(CampaignLead.person_id == person.id).count()
+    _delete_people(db, deletable)
+    db.commit()
+    return {"deleted": 1, "in_campaigns": in_campaigns}
+
+
 @router.post("/import")
 async def import_csv(
     file: UploadFile = File(...),

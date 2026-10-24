@@ -36,6 +36,7 @@ The backend is a JSON REST API at `http://localhost:8000`. Every app endpoint li
 |---|---|---|
 | GET | `/leads/people` | Prospects, newest first. Filters: `search` (name, email, role, company), `status`, `list_id`. Each row includes company details and `campaign_count`. The response also has `status_counts` and `total_prospects`. |
 | GET | `/leads/people/{id}` | One prospect |
+| DELETE | `/leads/people/{id}` | Delete one prospect and take it out of lists and campaigns. Returns 409 if they have been emailed or opted out, because those prospects are kept |
 | PATCH | `/leads/people/{id}/status?status=` | Set a prospect's status |
 | POST | `/leads/people/bulk-status` | `{person_ids, status}`: set many at once |
 | GET | `/leads/companies`, `/leads/companies/{id}` | Companies, and one company with its people |

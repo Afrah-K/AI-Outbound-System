@@ -12,6 +12,7 @@ import {
   PaperAirplaneIcon,
   ChatBubbleLeftRightIcon,
   MegaphoneIcon,
+  MinusCircleIcon,
   QueueListIcon,
   TrashIcon,
   UserPlusIcon,
@@ -524,6 +525,44 @@ function RemoveAllProspects({ filters, total, filtering, onDone }) {
   )
 }
 
+/** "Are you sure?" for the minus button on a prospect row. */
+function DeleteProspectDialog({ person, onClose, onDeleted }) {
+  const queryClient = useQueryClient()
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.leads.deletePerson(person.id),
+    onSuccess: (response) => {
+      const r = response.data
+      toast.success(
+        `Deleted ${person.email}` + (r.in_campaigns ? ` and took them out of ${r.in_campaigns} campaign${r.in_campaigns === 1 ? '' : 's'}` : '')
+      )
+      queryClient.invalidateQueries({ queryKey: ['people'] })
+      queryClient.invalidateQueries({ queryKey: ['leadLists'] })
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      onDeleted(person.id)
+      onClose()
+    },
+    // Kept (emailed or opted out) - the error toast says why
+    onError: onClose,
+  })
+
+  return (
+    <ConfirmDialog
+      open={!!person}
+      title="Delete this prospect?"
+      loading={deleteMutation.isPending}
+      onConfirm={() => deleteMutation.mutate()}
+      onCancel={onClose}
+    >
+      <p>
+        This permanently deletes <span className="font-medium text-gray-900">{person.email}</span> from your lead database,
+        including its lead lists and any campaigns it's in. It <strong>can't be undone</strong>.
+      </p>
+      <p className="text-gray-500">Prospects who've been emailed or opted out are kept so their history isn't lost.</p>
+    </ConfirmDialog>
+  )
+}
+
 function BulkBar({ selectedIds, onClear }) {
   const queryClient = useQueryClient()
   const [campaignId, setCampaignId] = useState('')
@@ -615,6 +654,7 @@ export default function ProspectsPage() {
   const [selected, setSelected] = useState(() => new Set())
   const [showImport, setShowImport] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const debouncedSearch = useDebounced(search)
 
   // New filters start from page 1 with nothing selected.
@@ -817,7 +857,10 @@ export default function ProspectsPage() {
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Campaigns</th>
                   <th className="px-3 py-3 font-medium">Added</th>
-                  <th className="pl-3 pr-5 py-3 font-medium text-right">Links</th>
+                  <th className="px-3 py-3 font-medium text-right">Links</th>
+                  <th className="pl-1 pr-5 py-3 w-10">
+                    <span className="sr-only">Delete</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -882,7 +925,7 @@ export default function ProspectsPage() {
                       <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
                         {person.created_at ? new Date(person.created_at + 'Z').toLocaleDateString() : '-'}
                       </td>
-                      <td className="pl-3 pr-5 py-3 text-right whitespace-nowrap">
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-2">
                           {site && (
                             <a href={site} target="_blank" rel="noopener noreferrer" className="text-xs text-primary-600 hover:underline">
@@ -902,6 +945,17 @@ export default function ProspectsPage() {
                           {!site && !person.linkedin_url && <span className="text-gray-400">-</span>}
                         </div>
                       </td>
+                      <td className="pl-1 pr-5 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(person)}
+                          title="Delete prospect"
+                          aria-label={`Delete ${person.email}`}
+                          className="rounded-full p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <MinusCircleIcon className="h-5 w-5" />
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -918,6 +972,19 @@ export default function ProspectsPage() {
         </Card>
       )}
 
+      {deleteTarget && (
+        <DeleteProspectDialog
+          person={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={(id) =>
+            setSelected((prev) => {
+              const next = new Set(prev)
+              next.delete(id)
+              return next
+            })
+          }
+        />
+      )}
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
       {showAdd && (
         <AddProspectModal
