@@ -131,7 +131,8 @@ def _pick_partner(db: Session, inbox: Inbox, candidates: list, config: WarmupCon
     already at their own daily quota, since replying counts as a real
     send from their mailbox too and shouldn't push them past their cap.
     """
-    others = [c for c in candidates if c.id != inbox.id and c.has_credentials]
+    # Paused or cancelled inboxes don't take part at all - not even by replying
+    others = [c for c in candidates if c.id != inbox.id and c.has_credentials and not c.is_warmup_paused]
 
     def under_own_quota(c: Inbox) -> bool:
         if c.warmup_stage not in STAGE_LIMIT_FIELD:
@@ -279,7 +280,7 @@ def get_status(db: Session) -> list:
             "is_warmup_paused": inbox.is_warmup_paused,
             "pause_reason": inbox.pause_reason,
             "has_partner": any(
-                i.id != inbox.id and i.has_credentials for i in inboxes
+                i.id != inbox.id and i.has_credentials and not i.is_warmup_paused for i in inboxes
             ),
         })
     return status

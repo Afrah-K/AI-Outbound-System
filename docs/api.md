@@ -29,6 +29,7 @@ The backend is a JSON REST API at `http://localhost:8000`. Every app endpoint li
 | GET | `/warmup/activity?limit=` | Recent warmup events |
 | POST | `/warmup/run` | Run one warmup cycle now |
 | POST | `/warmup/{inbox_id}/pause`, `/resume` | Pause or resume warmup for an inbox |
+| POST | `/warmup/{inbox_id}/cancel` | End warmup for an inbox: resets progress and keeps it stopped until resumed |
 
 ## Prospects and lead tools: `/api/v1/leads`
 

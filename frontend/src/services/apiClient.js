@@ -86,6 +86,13 @@ export const api = {
       apiClient.post(`/api/v1/inboxes/${id}/send-test`, null, { params: { to } }),
   },
 
+  // Warmup
+  warmup: {
+    pause: (inboxId) => apiClient.post(`/api/v1/warmup/${inboxId}/pause`),
+    resume: (inboxId) => apiClient.post(`/api/v1/warmup/${inboxId}/resume`),
+    cancel: (inboxId) => apiClient.post(`/api/v1/warmup/${inboxId}/cancel`),
+  },
+
   // Leads
   leads: {
     listCompanies: (params) => apiClient.get('/api/v1/leads/companies', { params }),

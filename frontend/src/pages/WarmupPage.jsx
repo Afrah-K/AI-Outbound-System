@@ -1,7 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
-import { FireIcon } from '@heroicons/react/24/outline'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { FireIcon, PauseIcon, PlayIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import toast from 'react-hot-toast'
 import { api } from '../services/apiClient'
+import Button from '../components/common/Button'
 import Card from '../components/common/Card'
+import ConfirmDialog from '../components/common/ConfirmDialog'
 import StatusBadge from '../components/common/StatusBadge'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import EmptyState from '../components/common/EmptyState'
@@ -34,7 +38,56 @@ function WarmupProgress({ stage }) {
   )
 }
 
+// Matches WARMUP_CANCELLED in backend/app/routers/warmup.py
+const WARMUP_CANCELLED = 'Warmup cancelled'
+
+function WarmupControls({ inbox, onCancel }) {
+  const queryClient = useQueryClient()
+  const cancelled = inbox.is_warmup_paused && inbox.pause_reason === WARMUP_CANCELLED
+
+  const toggleMutation = useMutation({
+    mutationFn: () => (inbox.is_warmup_paused ? api.warmup.resume(inbox.id) : api.warmup.pause(inbox.id)),
+    onSuccess: () => {
+      toast.success(
+        cancelled ? 'Warmup restarted' : inbox.is_warmup_paused ? 'Warmup resumed' : 'Warmup paused'
+      )
+      queryClient.invalidateQueries({ queryKey: ['inboxes'] })
+    },
+  })
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        size="sm"
+        variant="secondary"
+        icon={inbox.is_warmup_paused ? PlayIcon : PauseIcon}
+        loading={toggleMutation.isPending}
+        onClick={() => toggleMutation.mutate()}
+      >
+        {cancelled ? 'Start warmup' : inbox.is_warmup_paused ? 'Resume' : 'Pause'}
+      </Button>
+      {!cancelled && (
+        <Button size="sm" variant="ghost" icon={XMarkIcon} onClick={() => onCancel(inbox)}>
+          Cancel warmup
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export default function WarmupPage() {
+  const queryClient = useQueryClient()
+  const [cancelTarget, setCancelTarget] = useState(null)
+
+  const cancelMutation = useMutation({
+    mutationFn: (inboxId) => api.warmup.cancel(inboxId),
+    onSuccess: () => {
+      toast.success('Warmup cancelled')
+      setCancelTarget(null)
+      queryClient.invalidateQueries({ queryKey: ['inboxes'] })
+    },
+  })
+
   const { data: inboxes, isLoading } = useQuery({
     queryKey: ['inboxes'],
     queryFn: async () => {
@@ -101,8 +154,20 @@ export default function WarmupPage() {
                     <p className="text-sm text-gray-500">{inbox.domain}</p>
                   </div>
                 </div>
-                <StatusBadge status={inbox.warmup_stage || 'not_started'} />
+                <div className="flex items-center gap-2">
+                  {inbox.is_warmup_paused && (
+                    <StatusBadge
+                      status={inbox.pause_reason === WARMUP_CANCELLED ? 'cancelled' : 'paused'}
+                      variant={inbox.pause_reason === WARMUP_CANCELLED ? 'gray' : 'warning'}
+                    />
+                  )}
+                  <StatusBadge status={inbox.warmup_stage || 'not_started'} />
+                </div>
               </div>
+
+              {inbox.is_warmup_paused && inbox.pause_reason && inbox.pause_reason !== WARMUP_CANCELLED && (
+                <p className="-mt-2 mb-4 text-sm text-yellow-700">{inbox.pause_reason}</p>
+              )}
 
               <WarmupProgress stage={inbox.warmup_stage || 'not_started'} />
 
@@ -114,10 +179,32 @@ export default function WarmupPage() {
                   Health: {inbox.health_score}%
                 </span>
               </div>
+
+              {inbox.warmup_stage !== 'completed' && (
+                <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+                  <WarmupControls inbox={inbox} onCancel={setCancelTarget} />
+                </div>
+              )}
             </Card>
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!cancelTarget}
+        title="Cancel warmup?"
+        confirmLabel="Cancel warmup"
+        cancelLabel="Keep warming up"
+        loading={cancelMutation.isPending}
+        onConfirm={() => cancelMutation.mutate(cancelTarget.id)}
+        onCancel={() => setCancelTarget(null)}
+      >
+        <p>
+          Warmup stops for <span className="font-medium text-gray-900">{cancelTarget?.email_address}</span> and
+          its progress resets. It also stops replying to your other inboxes&apos; warmup emails.
+        </p>
+        <p>You can start it again later, from stage 1. To stop for a while without losing progress, pause instead.</p>
+      </ConfirmDialog>
 
       {/* Where the warmup emails land - the result warmup is working toward */}
       <PlacementSection />
